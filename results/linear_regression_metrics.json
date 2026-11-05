@@ -1,0 +1,33 @@
+{
+ "model": "Linear regression",
+ "seconds_to_train": 0.11852812767028809,
+ "best_params": {},
+ "threshold": 1.0229236205696344,
+ "val_auc": 0.8683838383838384,
+ "val_sensitivity": 0.9,
+ "val_specificity": 0.6818181818181818,
+ "test_auc": 0.9013021909880116,
+ "test_auc_ci": [
+  0.8498496320140243,
+  0.943458251953125
+ ],
+ "test_sensitivity": 0.9390243902439024,
+ "test_sensitivity_ci": [
+  0.8735551238465274,
+  0.9896959283557222
+ ],
+ "test_specificity": 0.690677966101695,
+ "test_specificity_ci": [
+  0.5825759985860728,
+  0.7909109538002981
+ ],
+ "test_confusion": {
+  "tp": 154,
+  "fn": 10,
+  "tn": 163,
+  "fp": 73
+ },
+ "missed_severe_or_worse": 6,
+ "severe_or_worse": 92,
+ "test_quadratic_kappa": 0.6825075151146689
+}

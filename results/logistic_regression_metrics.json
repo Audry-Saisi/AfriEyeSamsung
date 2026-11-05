@@ -1,0 +1,34 @@
+{
+ "model": "Logistic regression",
+ "seconds_to_train": 7.614184379577637,
+ "best_params": {
+  "logisticregression__C": 0.1
+ },
+ "threshold": 0.34635961215640987,
+ "val_auc": 0.8683838383838384,
+ "val_sensitivity": 0.9,
+ "val_specificity": 0.6272727272727273,
+ "test_auc": 0.8987184787102107,
+ "test_auc_ci": [
+  0.8456637411946435,
+  0.9420827449721865
+ ],
+ "test_sensitivity": 0.9451219512195121,
+ "test_sensitivity_ci": [
+  0.879746835443038,
+  0.9941877171879177
+ ],
+ "test_specificity": 0.6864406779661016,
+ "test_specificity_ci": [
+  0.5708203125,
+  0.7897245346736825
+ ],
+ "test_confusion": {
+  "tp": 155,
+  "fn": 9,
+  "tn": 162,
+  "fp": 74
+ },
+ "missed_severe_or_worse": 7,
+ "severe_or_worse": 92
+}
