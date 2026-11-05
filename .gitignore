@@ -1,0 +1,7 @@
+.venv/
+data/raw/
+data/new_photos/
+__pycache__/
+.ipynb_checkpoints/
+app/.secret
+app/afrieye.db
