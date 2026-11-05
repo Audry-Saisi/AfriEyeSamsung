@@ -1,0 +1,43 @@
+AFRIEYE: WHAT TO DO WITH THESE FILES
+Research demo, not a medical device. Don't enter real patient data.
+
+1. COPY THE FILES INTO YOUR PROJECT
+Unzip into a temporary folder, then copy everything into AfriEyeSamsung. In PowerShell:
+
+  Expand-Archive "$HOME\Downloads\AfriEye-Update.zip" "$HOME\Downloads\AfriEye-Update" -Force
+  Copy-Item "$HOME\Downloads\AfriEye-Update\*" "C:\Users\Administrator\Desktop\AfriEyeSamsung" -Recurse -Force
+
+This adds new files. It doesn't change your notebooks 01 to 07 or their results.
+
+2. RUN THE APP
+In the VS Code terminal, inside AfriEyeSamsung, with .venv active:
+
+  pip install -r requirements-app.txt
+  python app/run.py
+
+Open http://localhost:8200 and sign in:
+  CHW:             0711 000 001   password demo-chw-2026
+  Eye specialist:  0711 000 002   password demo-eye-2026
+Stop it with Ctrl+C. To see the demo with no server, double-click app/dist/afrieye_demo.html.
+
+3. RUN THE NOTEBOOKS IN THIS ORDER
+  notebook 07     Fix the error first, and note the XGBoost result
+  notebook 08     Upload to Google Colab. Needs a free Google account and T4 GPU. Unzip its results into AfriEyeSamsung.
+  notebook 09     In VS Code: checks for camera bias
+  notebook 10     In VS Code: chooses the final model
+  notebook 11     In VS Code, once you have new photos: see docs/adapter_test_plan.md
+  notebook 12     In VS Code: puts a newly chosen neural network into the app
+
+WHAT HAS AND HASN'T BEEN TESTED
+Tested here: notebooks 09, 10 and 11 on the real data, and the full app in an automated browser, including offline use.
+Not run yet: notebooks 08 and 12 need PyTorch, which wasn't available where they were written, so expect small fixes.
+Also not tested: loading an exported model in the app's browser, a real phone, a real SMS, and real adapter photos.
+Offline start on a phone needs HTTPS. Over plain Wi-Fi, the phone can scan only while the page is already open.
+
+OTHER FILES
+  app/                     The connected app: CHW, eye specialist, patient and family
+  notebooks/               Notebooks 08 to 12
+  results/small_cnn_*      Results of the small neural network, in the same format as your models
+  models/small_cnn*        The small neural network
+  src/afrieye/             Its code, used by notebook 11
+  docs/                    Adapter test plan and project decisions

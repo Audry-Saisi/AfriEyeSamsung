@@ -1,0 +1,35 @@
+{
+ "model": "Small CNN",
+ "kind": "neural network",
+ "seconds_to_train": null,
+ "threshold": 0.23040810227394104,
+ "val_auc": 0.93260101010101,
+ "val_sensitivity": 0.9,
+ "val_specificity": 0.8,
+ "test_auc": 0.9427449359239354,
+ "test_auc_ci": [
+  0.9061210497181964,
+  0.970321300930093
+ ],
+ "test_sensitivity": 0.9512195121951219,
+ "test_sensitivity_ci": [
+  0.9022722435078756,
+  0.9878121370499419
+ ],
+ "test_specificity": 0.7754237288135594,
+ "test_specificity_ci": [
+  0.6984110586383313,
+  0.8455516612252737
+ ],
+ "test_confusion": {
+  "tp": 156,
+  "fn": 8,
+  "tn": 183,
+  "fp": 53
+ },
+ "missed_severe_or_worse": 2,
+ "severe_or_worse": 92,
+ "model_mb": 0.68,
+ "parameters": 167533,
+ "phone_ready": true
+}
