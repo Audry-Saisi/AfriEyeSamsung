@@ -1,0 +1,41 @@
+{
+ "model": "MobileNetV3",
+ "kind": "neural network",
+ "seconds_to_train": 356.528137922287,
+ "threshold": 0.49374207854270935,
+ "urgent_threshold": 0.6915837526321411,
+ "quality_threshold": 0.11001813411712646,
+ "val_auc": 0.9701515151515152,
+ "val_sensitivity": 0.9,
+ "val_specificity": 0.8909090909090909,
+ "test_auc": 0.9722767672591981,
+ "test_auc_ci": [
+  0.9505476811168693,
+  0.9873574596135573
+ ],
+ "test_sensitivity": 0.926829268292683,
+ "test_sensitivity_ci": [
+  0.8763693820224719,
+  0.9679687499999999
+ ],
+ "test_specificity": 0.902542372881356,
+ "test_specificity_ci": [
+  0.8431876246261216,
+  0.9530014124293784
+ ],
+ "test_confusion": {
+  "tp": 152,
+  "fn": 12,
+  "tn": 213,
+  "fp": 23
+ },
+ "missed_severe_or_worse": 5,
+ "severe_or_worse": 92,
+ "best_epoch": 5,
+ "epochs": 18,
+ "image_size": 320,
+ "parameters": 4208437,
+ "model_mb": 17.0,
+ "cpu_ms_per_photo": 43.3,
+ "phone_ready": false
+}

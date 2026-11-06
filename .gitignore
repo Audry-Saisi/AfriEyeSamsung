@@ -5,3 +5,4 @@ __pycache__/
 .ipynb_checkpoints/
 app/.secret
 app/afrieye.db
+models/*.pt

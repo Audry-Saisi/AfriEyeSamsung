@@ -1,0 +1,41 @@
+{
+ "model": "EfficientNet-B0",
+ "kind": "neural network",
+ "seconds_to_train": 382.1952211856842,
+ "threshold": 0.08635600656270981,
+ "urgent_threshold": 0.6316996216773987,
+ "quality_threshold": 0.08660071343183517,
+ "val_auc": 0.9687878787878788,
+ "val_sensitivity": 0.9,
+ "val_specificity": 0.8863636363636364,
+ "test_auc": 0.968633732947499,
+ "test_auc_ci": [
+  0.9431126954214178,
+  0.9849263179579942
+ ],
+ "test_sensitivity": 0.926829268292683,
+ "test_sensitivity_ci": [
+  0.8733253968253968,
+  0.9675428737928738
+ ],
+ "test_specificity": 0.8728813559322034,
+ "test_specificity_ci": [
+  0.8118387880454713,
+  0.9256274869911234
+ ],
+ "test_confusion": {
+  "tp": 152,
+  "fn": 12,
+  "tn": 206,
+  "fp": 30
+ },
+ "missed_severe_or_worse": 1,
+ "severe_or_worse": 92,
+ "best_epoch": 8,
+ "epochs": 18,
+ "image_size": 320,
+ "parameters": 4013953,
+ "model_mb": 16.4,
+ "cpu_ms_per_photo": 106.0,
+ "phone_ready": false
+}

@@ -1,0 +1,27 @@
+{
+ "slug": "efficientnet_b0",
+ "model": "EfficientNet-B0",
+ "val_auc": 0.9687878787878788,
+ "test_auc": 0.968633732947499,
+ "test_auc_ci": [
+  0.9431126954214178,
+  0.9849263179579942
+ ],
+ "test_sensitivity": 0.926829268292683,
+ "test_specificity": 0.8728813559322034,
+ "test_severe_missed": 1,
+ "test_severe_total": 92,
+ "threshold": 0.08635600656270981,
+ "weakest_image_size_auc": 0.8894675925925926,
+ "compared_models": [
+  "ConvNeXt-Tiny",
+  "MobileNetV3",
+  "EfficientNet-B0",
+  "Small CNN",
+  "Logistic regression",
+  "Linear regression",
+  "XGBoost",
+  "Random forest"
+ ],
+ "not_run": []
+}

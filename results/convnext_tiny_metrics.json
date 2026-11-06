@@ -1,0 +1,41 @@
+{
+ "model": "ConvNeXt-Tiny",
+ "kind": "neural network",
+ "seconds_to_train": 439.42774748802185,
+ "threshold": 0.35598471760749817,
+ "urgent_threshold": 0.41807976365089417,
+ "quality_threshold": 0.055625949054956436,
+ "val_auc": 0.977020202020202,
+ "val_sensitivity": 0.9,
+ "val_specificity": 0.9409090909090909,
+ "test_auc": 0.9780642827614717,
+ "test_auc_ci": [
+  0.9578279180380113,
+  0.9906009529852782
+ ],
+ "test_sensitivity": 0.8902439024390244,
+ "test_sensitivity_ci": [
+  0.8292682926829268,
+  0.9375
+ ],
+ "test_specificity": 0.9449152542372882,
+ "test_specificity_ci": [
+  0.9057936833470057,
+  0.9756146734854445
+ ],
+ "test_confusion": {
+  "tp": 146,
+  "fn": 18,
+  "tn": 223,
+  "fp": 13
+ },
+ "missed_severe_or_worse": 6,
+ "severe_or_worse": 92,
+ "best_epoch": 10,
+ "epochs": 18,
+ "image_size": 320,
+ "parameters": 27823973,
+ "model_mb": 111.4,
+ "cpu_ms_per_photo": 260.1,
+ "phone_ready": false
+}
