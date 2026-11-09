@@ -39,6 +39,9 @@ MAX_PHOTO_BYTES = 3 * 1024 * 1024
 LANGS = ["en", "sw", "ki", "luy", "luo", "kln", "kam", "mas", "guz", "mer", "tuv", "so", "nyf"]
 CONDITIONS = ["High blood pressure", "Kidney disease", "Heart disease", "High cholesterol", "Cataract", "Glaucoma", "Previous eye surgery or laser", "Pregnancy", "HIV", "Smoking"]
 DIABETES_TYPES = ["Type 1", "Type 2", "Not sure"]
+# How the patient's eye care is paid for. SHA is Kenya's Social Health Authority (it replaced NHIF in 2024).
+COVER = {"sha": "SHA (Social Health Authority)", "ngo": "NGO or charity support", "private": "Private insurance", "none": "No cover", "unsure": "Not sure"}
+COVER_SW = {"sha": "SHA (Mamlaka ya Afya ya Jamii)", "ngo": "Msaada wa shirika au NGO", "private": "Bima ya kibinafsi", "none": "Hana bima", "unsure": "Hajui"}
 LEVEL_TEXT = {
     "ok": ("No diabetic eye damage seen", "Keep your regular checks and diabetes care."),
     "watch": ("Early eye changes seen", "Keep your regular checks. Your eye clinic will tell you when to return."),
@@ -58,7 +61,7 @@ STATUS_TEXT = {
 }
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, phone TEXT UNIQUE NOT NULL, name TEXT NOT NULL, pw TEXT, role TEXT NOT NULL DEFAULT 'member', code_hash TEXT, code_expires REAL, code_tries INTEGER DEFAULT 0, created REAL, area TEXT, staff_id TEXT, hospital_id TEXT, approved INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS patients(id INTEGER PRIMARY KEY, name TEXT NOT NULL, birth_year INTEGER, phone TEXT NOT NULL, village TEXT, sms_consent INTEGER NOT NULL DEFAULT 0, created_by INTEGER, created REAL, area_id TEXT);
+CREATE TABLE IF NOT EXISTS patients(id INTEGER PRIMARY KEY, name TEXT NOT NULL, birth_year INTEGER, phone TEXT NOT NULL, village TEXT, sms_consent INTEGER NOT NULL DEFAULT 0, created_by INTEGER, created REAL, area_id TEXT, cover TEXT, cover_ref TEXT, cover_help TEXT, cover_chw INTEGER, cover_updated REAL);
 CREATE TABLE IF NOT EXISTS links(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, user_id INTEGER NOT NULL, access TEXT NOT NULL, relation TEXT, receive_sms INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, added_by INTEGER, created REAL, UNIQUE(patient_id, user_id));
 CREATE TABLE IF NOT EXISTS results(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, left_grade TEXT, right_grade TEXT, worst TEXT NOT NULL, level TEXT NOT NULL, note TEXT, clinician_id INTEGER NOT NULL, created REAL);
 CREATE TABLE IF NOT EXISTS appointments(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, when_iso TEXT NOT NULL, location TEXT NOT NULL, clinician_id INTEGER NOT NULL, result_id INTEGER, created REAL);
@@ -70,7 +73,7 @@ CREATE TABLE IF NOT EXISTS sms(id INTEGER PRIMARY KEY, patient_id INTEGER, appoi
 CREATE TABLE IF NOT EXISTS emails(id INTEGER PRIMARY KEY, patient_id INTEGER, to_email TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, error TEXT, created REAL);
 CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, link TEXT, created REAL, read INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS reviews(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, author_id INTEGER NOT NULL, target_id INTEGER NOT NULL, target_role TEXT NOT NULL, stars INTEGER NOT NULL, comment TEXT, created REAL, UNIQUE(patient_id, target_id));
-CREATE TABLE IF NOT EXISTS visit_requests(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, area_id TEXT, note TEXT, status TEXT NOT NULL, source TEXT, chw_id INTEGER, created REAL, updated REAL);
+CREATE TABLE IF NOT EXISTS visit_requests(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, area_id TEXT, note TEXT, status TEXT NOT NULL, source TEXT, chw_id INTEGER, created REAL, updated REAL, kind TEXT, people INTEGER, place TEXT, preferred TEXT);
 CREATE TABLE IF NOT EXISTS reminders(id INTEGER PRIMARY KEY, appointment_id INTEGER NOT NULL, user_id INTEGER NOT NULL, remind_at REAL NOT NULL, channels TEXT NOT NULL, sent REAL, created REAL);
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, created_by INTEGER NOT NULL, author_role TEXT, title TEXT, pdf BLOB NOT NULL, created REAL, status TEXT, to_user INTEGER, released REAL);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, at REAL, user_id INTEGER, action TEXT, patient_id INTEGER, detail TEXT);
@@ -101,7 +104,8 @@ def clean(v, field, maxlen=120, required=True):
 
 def upgrade(con):
     """Adds columns that older databases don't have yet, so existing data keeps working."""
-    want = {"users": [("email", "TEXT"), ("lang", "TEXT")], "patients": [("conditions", "TEXT")], "screenings": [("alerted", "REAL"), ("escalated", "REAL")], "reports": [("status", "TEXT"), ("to_user", "INTEGER"), ("released", "REAL")]}
+    want = {"users": [("email", "TEXT"), ("lang", "TEXT")], "patients": [("conditions", "TEXT")], "screenings": [("alerted", "REAL"), ("escalated", "REAL")], "reports": [("status", "TEXT"), ("to_user", "INTEGER"), ("released", "REAL")], "visit_requests": [("kind", "TEXT"), ("people", "INTEGER"), ("place", "TEXT"), ("preferred", "TEXT")]}
+    want["patients"] += [("cover", "TEXT"), ("cover_ref", "TEXT"), ("cover_help", "TEXT"), ("cover_chw", "INTEGER"), ("cover_updated", "REAL")]
     for table, cols in want.items():
         have = [c[1] for c in con.execute(f"PRAGMA table_info({table})")]
         for name, kind in cols:
@@ -436,6 +440,32 @@ def create_app(config=None):
                 abort(400, "Enter years with diabetes as a number.")
         return json.dumps(dict(items=items, diabetes_type=dt, years=years, insulin=bool(h.get("insulin")), notes=clean(h.get("notes"), "health notes", 300, False)))
 
+    def cover_json(p):
+        """The patient's health cover, and whether a CHW is helping them apply for SHA."""
+        if not p["cover"] and not p["cover_help"]:
+            return None
+        helper = db().execute("SELECT name,phone FROM users WHERE id=?", (p["cover_chw"],)).fetchone() if p["cover_chw"] else None
+        return dict(cover=p["cover"], label=COVER.get(p["cover"], ""), ref=p["cover_ref"], help=p["cover_help"], helper=dict(helper) if helper else None)
+
+    def set_cover(pid, cover, ref=None, want_help=False, chw_id=None):
+        """Saves the cover. With no cover and a request for help, the area's CHWs are asked to help them apply for SHA."""
+        if cover not in COVER:
+            abort(400, "Choose how the patient's eye care is paid for.")
+        p = db().execute("SELECT * FROM patients WHERE id=?", (pid,)).fetchone(); helpv, helper = p["cover_help"], p["cover_chw"]
+        if cover in ("none", "unsure") and want_help:
+            if chw_id:  # the CHW recording it is helping them
+                helpv, helper = "helping", chw_id
+            elif helpv not in ("requested", "helping"):
+                helpv = "requested"
+                for c in db().execute("SELECT id,phone FROM users WHERE role='chw' AND approved=1 AND area=?", (p["area_id"],)).fetchall():
+                    notify_user(c["id"], "Help with SHA requested", f"{p['name']} in {p['village'] or 'your area'} has no health cover and asked for help to apply for SHA.")
+                    send_sms(c["phone"], f"AfriEye: {p['name']} in {p['village'] or 'your area'} asked for help to apply for SHA. Open AfriEye to help.", "sha_help", pid)
+        elif cover in ("none", "unsure"):
+            helpv, helper = (None, None) if helpv != "registered" else (helpv, helper)
+        elif helpv in ("requested", "helping"):
+            helpv = "registered" if cover == "sha" else None
+        db().execute("UPDATE patients SET cover=?,cover_ref=?,cover_help=?,cover_chw=?,cover_updated=? WHERE id=?", (cover, clean(ref, "cover number", 40, False) or None, helpv, helper, time.time(), pid))
+
     def saved_patient(b, chw_id):
         info = b.get("patient") or {}
         name = clean(info.get("name"), "patient's name"); phone = normalise_phone(info.get("phone")); area = info.get("area")
@@ -443,6 +473,7 @@ def create_app(config=None):
             abort(400, "Choose the patient's area.")
         village = AREA[area]["name"]; by = birth_year(info.get("birth_year"))
         consent = 1 if info.get("sms_consent") else 0; email = clean_email(info.get("email")); hist = health_history(b.get("history"))
+        hv = b.get("history") or {}; cov = hv.get("cover")
         row = db().execute("SELECT * FROM patients WHERE phone=? AND name=?", (phone, name)).fetchone()
         if row:
             if email:
@@ -450,6 +481,8 @@ def create_app(config=None):
             if hist:
                 db().execute("UPDATE patients SET conditions=? WHERE id=?", (hist, row["id"]))
             db().execute("UPDATE patients SET sms_consent=?, village=?, area_id=?, birth_year=COALESCE(?,birth_year) WHERE id=?", (consent, village, area, by, row["id"]))
+            if cov:
+                set_cover(row["id"], cov, hv.get("cover_ref"), bool(hv.get("cover_help")), chw_id)
             return row["id"]
         u = db().execute("SELECT * FROM users WHERE phone=?", (phone,)).fetchone()
         if u and u["role"] != "member":
@@ -457,6 +490,8 @@ def create_app(config=None):
         u, _ = ensure_user(phone, name, email)
         pid = db().execute("INSERT INTO patients(name,birth_year,phone,village,area_id,sms_consent,created_by,created,conditions) VALUES(?,?,?,?,?,?,?,?,?)", (name, by, phone, village, area, consent, chw_id, time.time(), hist)).lastrowid
         db().execute("INSERT INTO links(patient_id,user_id,access,relation,added_by,created) VALUES(?,?,?,?,?,?)", (pid, u["id"], "owner", "Self", chw_id, time.time()))
+        if cov:
+            set_cover(pid, cov, hv.get("cover_ref"), bool(hv.get("cover_help")), chw_id)
         return pid
 
     def link_relative(pid, b, added_by):
@@ -500,7 +535,7 @@ def create_app(config=None):
         if with_patient:
             p = db().execute("SELECT * FROM patients WHERE id=?", (s["patient_id"],)).fetchone(); c = db().execute("SELECT name,phone FROM users WHERE id=?", (s["chw_id"],)).fetchone()
             has_face = db().execute("SELECT 1 FROM patient_faces WHERE patient_id=?", (p["id"],)).fetchone() is not None
-            out["patient"] = dict(id=p["id"], name=p["name"], birth_year=p["birth_year"], village=p["village"], sms_consent=bool(p["sms_consent"]), has_face=has_face, conditions=json.loads(p["conditions"]) if p["conditions"] else None)
+            out["patient"] = dict(id=p["id"], name=p["name"], birth_year=p["birth_year"], village=p["village"], sms_consent=bool(p["sms_consent"]), has_face=has_face, conditions=json.loads(p["conditions"]) if p["conditions"] else None, cover=cover_json(p))
             if s["status"] == "waiting_review":
                 days = (time.time() - s["created"]) / 86400
                 out["deadline"] = dict(day=int(days) + 1, days_left=max(0, REFERRAL_DAYS - int(days)), due=stamp(s["created"] + REFERRAL_DAYS * 86400), alerted=bool(s["alerted"]), escalated=bool(s["escalated"]))
@@ -819,8 +854,9 @@ def create_app(config=None):
         rem = {}
         for r in db().execute("SELECT * FROM reminders WHERE user_id=? AND sent IS NULL", (uid,)):
             rem.setdefault(r["appointment_id"], []).append(dict(id=r["id"], at=stamp(r["remind_at"]), channels=json.loads(r["channels"])))
-        visit = db().execute("SELECT v.status,u.name,u.phone FROM visit_requests v LEFT JOIN users u ON u.id=v.chw_id WHERE v.patient_id=? AND v.status IN ('open','accepted') ORDER BY v.id DESC LIMIT 1", (pid,)).fetchone()
-        out = dict(people=people, reports=reports, reminders=rem, visit=dict(visit) if visit else None, emails=mails, patient=dict(conditions=json.loads(p["conditions"]) if p["conditions"] else None, id=p["id"], name=p["name"], birth_year=p["birth_year"], sms_consent=bool(p["sms_consent"]), phone=p["phone"], village=p["village"], area_id=p["area_id"], county=AREA[p["area_id"]]["county"] if p["area_id"] in AREA else None, has_face=has_face), chw=dict(name=chw["name"], phone=chw["phone"]) if chw else None, doctor=results[0]["clinician"] if results else (up[0]["doctor"] if up else None), condition=(GRADES[results[0]["worst"]][1] if results else None), consultations=cons, status=results[0] if results else None, next_appointment=up[0] if up else None, appointments=appts, results=results, messages=msgs, screenings=scans)
+        visit = db().execute("SELECT v.status,u.name,u.phone FROM visit_requests v LEFT JOIN users u ON u.id=v.chw_id WHERE v.patient_id=? AND COALESCE(v.kind,'home')='home' AND v.status IN ('open','accepted') ORDER BY v.id DESC LIMIT 1", (pid,)).fetchone()
+        vvisit = db().execute("SELECT v.status,v.people,v.place,v.preferred,u.name,u.phone FROM visit_requests v LEFT JOIN users u ON u.id=v.chw_id WHERE v.patient_id=? AND v.kind='village' AND v.status IN ('open','accepted') ORDER BY v.id DESC LIMIT 1", (pid,)).fetchone()
+        out = dict(people=people, reports=reports, reminders=rem, visit=dict(visit) if visit else None, village_visit=dict(vvisit) if vvisit else None, emails=mails, cover=cover_json(p), patient=dict(conditions=json.loads(p["conditions"]) if p["conditions"] else None, id=p["id"], name=p["name"], birth_year=p["birth_year"], sms_consent=bool(p["sms_consent"]), phone=p["phone"], village=p["village"], area_id=p["area_id"], county=AREA[p["area_id"]]["county"] if p["area_id"] in AREA else None, has_face=has_face), chw=dict(name=chw["name"], phone=chw["phone"]) if chw else None, doctor=results[0]["clinician"] if results else (up[0]["doctor"] if up else None), condition=(GRADES[results[0]["worst"]][1] if results else None), consultations=cons, status=results[0] if results else None, next_appointment=up[0] if up else None, appointments=appts, results=results, messages=msgs, screenings=scans)
         if include_family:
             out["family"] = [dict(r) for r in db().execute("SELECT l.id,u.name,u.phone,u.email,l.relation,l.access,l.receive_sms,u.pw IS NOT NULL joined FROM links l JOIN users u ON u.id=l.user_id WHERE l.patient_id=? AND l.active=1 ORDER BY l.access='owner' DESC,u.name", (pid,))]
         return out
@@ -1088,26 +1124,82 @@ def create_app(config=None):
         return jsonify(ratings_for(session["uid"]))
 
     # ======== Home visits ========
-    def request_visit(pid, source, note=""):
+    def request_visit(pid, source, note="", kind="home", people=None, place=None, preferred=None):
+        """A home visit for the patient, or a village visit so the CHW can check a group of people with diabetes."""
         p = db().execute("SELECT * FROM patients WHERE id=?", (pid,)).fetchone()
-        if db().execute("SELECT 1 FROM visit_requests WHERE patient_id=? AND status IN ('open','accepted')", (pid,)).fetchone():
-            abort(409, "A health worker visit is already requested.")
-        db().execute("INSERT INTO visit_requests(patient_id,area_id,note,status,source,created) VALUES(?,?,?,?,?,?)", (pid, p["area_id"], note, "open", source, time.time()))
+        if db().execute("SELECT 1 FROM visit_requests WHERE patient_id=? AND COALESCE(kind,'home')=? AND status IN ('open','accepted')", (pid, kind)).fetchone():
+            abort(409, "A village visit is already requested." if kind == "village" else "A health worker visit is already requested.")
+        place = place or p["village"] or (AREA[p["area_id"]]["name"] if p["area_id"] in AREA else "")
+        db().execute("INSERT INTO visit_requests(patient_id,area_id,note,status,source,created,kind,people,place,preferred) VALUES(?,?,?,?,?,?,?,?,?,?)", (pid, p["area_id"], note, "open", source, time.time(), kind, people, place, preferred))
         for c in db().execute("SELECT id,phone FROM users WHERE role='chw' AND approved=1 AND area=?", (p["area_id"],)).fetchall():
-            notify_user(c["id"], "Home visit requested", f"{p['name']} in {p['village'] or 'your area'} asked for a visit.")
-            send_sms(c["phone"], f"AfriEye: {p['name']} in {p['village'] or 'your area'} asked for a home eye check. Open AfriEye to accept.", "visit_request", pid)
+            if kind == "village":
+                notify_user(c["id"], "Village visit requested", f"{p['name']} asked you to visit {place} to check about {people or 'several'} people.")
+                send_sms(c["phone"], f"AfriEye: {p['name']} asked for a village eye check in {place}, for about {people or 'several'} people{', around ' + preferred if preferred else ''}. Open AfriEye to accept.", "visit_request", pid)
+            else:
+                notify_user(c["id"], "Home visit requested", f"{p['name']} in {p['village'] or 'your area'} asked for a visit.")
+                send_sms(c["phone"], f"AfriEye: {p['name']} in {p['village'] or 'your area'} asked for a home eye check. Open AfriEye to accept.", "visit_request", pid)
 
     @app.post("/api/patients/<int:pid>/visit")
     @login_required
     def visit_ask(pid):
-        owner_required(pid); request_visit(pid, "app", clean(body().get("note"), "note", 200, False)); db().commit(); return jsonify(ok=True), 201
+        owner_required(pid); b = body(); kind = "village" if b.get("kind") == "village" else "home"
+        people = place = preferred = None
+        if kind == "village":
+            try:
+                people = int(b.get("people") or 0)
+            except (TypeError, ValueError):
+                people = 0
+            if not 2 <= people <= 200:
+                abort(400, "Enter how many people need an eye check, from 2 to 200.")
+            place = clean(b.get("place"), "place", 80, False) or None
+            preferred = clean(b.get("date"), "date", 10, False) or None
+        request_visit(pid, "app", clean(b.get("note"), "note", 200, False), kind, people, place, preferred); db().commit(); return jsonify(ok=True), 201
+
+    # ======== Health cover (SHA, NGO, insurance) ========
+    @app.post("/api/patients/<int:pid>/cover")
+    @login_required
+    def cover_save(pid):
+        u = me(); b = body()
+        if u["role"] == "chw":
+            if not may_view_face(pid):
+                abort(403, "You can only update patients you've looked after.")
+            set_cover(pid, b.get("cover"), b.get("ref"), bool(b.get("help")), u["id"])
+        else:
+            owner_required(pid); set_cover(pid, b.get("cover"), b.get("ref"), bool(b.get("help")))
+        audit("cover", pid, str(b.get("cover"))); db().commit(); return jsonify(ok=True)
+
+    @app.get("/api/chw/cover-help")
+    @chw_only
+    def cover_help_list():
+        u = me()
+        rows = db().execute("SELECT * FROM patients WHERE (cover_help='requested' AND area_id=?) OR (cover_help='helping' AND cover_chw=?) ORDER BY cover_updated", (u["area"], u["id"])).fetchall()
+        return jsonify([dict(id=r["id"], name=r["name"], phone=r["phone"], village=r["village"], birth_year=r["birth_year"], status=r["cover_help"], cover=COVER.get(r["cover"], ""), when=stamp(r["cover_updated"] or time.time())) for r in rows])
+
+    @app.post("/api/chw/cover-help/<int:pid>/<action>")
+    @chw_only
+    def cover_help_act(pid, action):
+        u = me(); p = db().execute("SELECT * FROM patients WHERE id=?", (pid,)).fetchone()
+        if not p:
+            abort(404, "Patient not found.")
+        if action == "start" and p["cover_help"] == "requested" and p["area_id"] == u["area"]:
+            db().execute("UPDATE patients SET cover_help='helping',cover_chw=?,cover_updated=? WHERE id=?", (u["id"], time.time(), pid))
+            send_sms(p["phone"], f"AfriEye: {u['name']}, community health worker, will help you apply for SHA. Keep your ID card ready. Phone: {u['phone']}", "sha_help", pid)
+            notify_patient_people(pid, "Help with SHA", f"{u['name']} will help you apply for SHA. Phone: {u['phone']}")
+        elif action == "done" and p["cover_help"] == "helping" and p["cover_chw"] == u["id"]:
+            ref = clean(body().get("ref"), "SHA number", 40, False) or p["cover_ref"]
+            db().execute("UPDATE patients SET cover='sha',cover_ref=?,cover_help='registered',cover_updated=? WHERE id=?", (ref, time.time(), pid))
+            send_sms(p["phone"], "AfriEye: you are now registered with SHA. Show your ID card at the hospital for your eye care.", "sha_help", pid)
+            notify_patient_people(pid, "Registered with SHA", f"{u['name']} helped you register with SHA.")
+        else:
+            abort(409, "This request can't be changed now.")
+        audit("cover_help_" + action, pid, ""); db().commit(); return jsonify(ok=True)
 
     @app.get("/api/chw/visits")
     @chw_only
     def visits():
         u = me()
         rows = db().execute("SELECT v.*,p.name,p.phone,p.village,p.birth_year FROM visit_requests v JOIN patients p ON p.id=v.patient_id WHERE (v.status='open' AND v.area_id=?) OR (v.status='accepted' AND v.chw_id=?) ORDER BY v.created", (u["area"], u["id"])).fetchall()
-        return jsonify([dict(id=r["id"], name=r["name"], phone=r["phone"], village=r["village"], birth_year=r["birth_year"], note=r["note"], status=r["status"], source=r["source"], when=stamp(r["created"])) for r in rows])
+        return jsonify([dict(id=r["id"], name=r["name"], phone=r["phone"], village=r["village"], birth_year=r["birth_year"], note=r["note"], status=r["status"], source=r["source"], when=stamp(r["created"]), kind=r["kind"] or "home", people=r["people"], place=r["place"], preferred=r["preferred"]) for r in rows])
 
     @app.post("/api/chw/visits/<int:vid>/<action>")
     @chw_only
@@ -1118,8 +1210,12 @@ def create_app(config=None):
         if action == "accept" and v["status"] == "open" and v["area_id"] == u["area"]:
             db().execute("UPDATE visit_requests SET status='accepted',chw_id=?,updated=? WHERE id=?", (u["id"], time.time(), vid))
             p = db().execute("SELECT * FROM patients WHERE id=?", (v["patient_id"],)).fetchone()
-            send_sms(p["phone"], f"AfriEye: {u['name']}, community health worker, will visit you for an eye check. Phone: {u['phone']}", "visit_accepted", p["id"])
-            notify_patient_people(p["id"], "Health worker visit accepted", f"{u['name']} will visit you. Phone: {u['phone']}")
+            if v["kind"] == "village":
+                send_sms(p["phone"], f"AfriEye: {u['name']}, community health worker, will come to {v['place']} for the village eye check. Phone: {u['phone']}. Please tell the people who need a check.", "visit_accepted", p["id"])
+                notify_patient_people(p["id"], "Village visit accepted", f"{u['name']} will come to {v['place']}. Phone: {u['phone']}")
+            else:
+                send_sms(p["phone"], f"AfriEye: {u['name']}, community health worker, will visit you for an eye check. Phone: {u['phone']}", "visit_accepted", p["id"])
+                notify_patient_people(p["id"], "Health worker visit accepted", f"{u['name']} will visit you. Phone: {u['phone']}")
         elif action == "done" and v["status"] == "accepted" and v["chw_id"] == u["id"]:
             db().execute("UPDATE visit_requests SET status='done',updated=? WHERE id=?", (time.time(), vid))
         else:
@@ -1323,12 +1419,12 @@ def create_app(config=None):
         return Response(("END " if end else "CON ") + text, mimetype="text/plain")
 
     U_TXT = {
-        "en": dict(menu="AfriEye eye care\n1. Book an eye doctor\n2. Ask a CHW to visit me\n3. My result and appointment\n4. Remind me of my appointment\n5. Kiswahili", hosp="Choose a hospital:", when="When would you like to go?\n1. This week\n2. Next week",
-                   booked="Request sent to {h}. The clinic will SMS you a date.", visit="Ask a community health worker to visit you at home?\n1. Yes\n2. No", visited="Request sent. A health worker in {a} will SMS you.", cancel="Nothing was sent.",
+        "en": dict(menu="AfriEye eye care\n1. Book an eye doctor\n2. Ask a CHW to visit\n3. My result and appointment\n4. Remind me of my appointment\n5. Kiswahili", hosp="Choose a hospital:", when="When would you like to go?\n1. This week\n2. Next week",
+                   booked="Request sent to {h}. The clinic will SMS you a date.", visit="Ask a community health worker to visit:\n1. Me at home\n2. My village, to check a group\n0. Cancel", people="How many people need an eye check? Enter a number:", vsent="Request sent. A health worker in {a} will SMS you about the village visit.", visited="Request sent. A health worker in {a} will SMS you.", cancel="Nothing was sent.",
                    none="No specialist result yet.", noappt="No appointment booked.", remind="Remind me:\n1. The day before\n2. On the morning", reminded="Done. We will SMS you.", lang="Language set to Kiswahili.", invalid="Please choose a number from the menu.",
                    welcome="Welcome to AfriEye eye care.\n1. Register", name="Enter your full name:", area="Choose your area:", consent="Agree to get eye care messages by SMS?\n1. Yes\n2. No", registered="You are registered. Dial again to book an eye doctor."),
-        "sw": dict(menu="AfriEye huduma ya macho\n1. Panga miadi na daktari wa macho\n2. Omba CHW anitembelee\n3. Matokeo na miadi yangu\n4. Nikumbushe miadi\n5. English", hosp="Chagua hospitali:", when="Ungependa kwenda lini?\n1. Wiki hii\n2. Wiki ijayo",
-                   booked="Ombi limetumwa kwa {h}. Kliniki itakutumia SMS ya tarehe.", visit="Omba mhudumu wa afya ya jamii akutembelee nyumbani?\n1. Ndiyo\n2. Hapana", visited="Ombi limetumwa. Mhudumu wa afya wa {a} atakutumia SMS.", cancel="Hakuna kilichotumwa.",
+        "sw": dict(menu="AfriEye huduma ya macho\n1. Panga miadi na daktari wa macho\n2. Omba CHW atembelee\n3. Matokeo na miadi yangu\n4. Nikumbushe miadi\n5. English", hosp="Chagua hospitali:", when="Ungependa kwenda lini?\n1. Wiki hii\n2. Wiki ijayo",
+                   booked="Ombi limetumwa kwa {h}. Kliniki itakutumia SMS ya tarehe.", visit="Omba mhudumu wa afya ya jamii atembelee:\n1. Mimi nyumbani\n2. Kijiji changu, kupima kikundi\n0. Ghairi", people="Ni watu wangapi wanahitaji kupimwa macho? Andika nambari:", vsent="Ombi limetumwa. Mhudumu wa afya wa {a} atakutumia SMS kuhusu ziara ya kijiji.", visited="Ombi limetumwa. Mhudumu wa afya wa {a} atakutumia SMS.", cancel="Hakuna kilichotumwa.",
                    none="Bado hakuna matokeo ya daktari.", noappt="Hakuna miadi.", remind="Nikumbushe:\n1. Siku moja kabla\n2. Asubuhi ya siku hiyo", reminded="Sawa. Tutakutumia SMS.", lang="Lugha sasa ni English.", invalid="Tafadhali chagua nambari kwenye menyu.",
                    welcome="Karibu AfriEye huduma ya macho.\n1. Jisajili", name="Andika jina lako kamili:", area="Chagua eneo lako:", consent="Ukubali kupokea ujumbe wa SMS kuhusu macho?\n1. Ndiyo\n2. Hapana", registered="Umesajiliwa. Piga tena kupanga miadi."),
     }
@@ -1394,6 +1490,20 @@ def create_app(config=None):
         if choice == "2":
             if len(parts) == 1:
                 return ussd_reply(T["visit"])
+            if parts[1] == "2":  # a village visit for a group
+                if len(parts) == 2:
+                    return ussd_reply(T["people"])
+                try:
+                    n = int(parts[2])
+                except ValueError:
+                    return ussd_reply(T["invalid"], True)
+                if not 2 <= n <= 200:
+                    return ussd_reply(T["invalid"], True)
+                try:
+                    request_visit(pid, "ussd", "", "village", n)
+                except Exception:
+                    pass  # already requested
+                db().commit(); return ussd_reply(T["vsent"].format(a=p["village"] or ""), True)
             if parts[1] != "1":
                 return ussd_reply(T["cancel"], True)
             try:

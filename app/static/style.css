@@ -250,3 +250,15 @@ h4{margin:6px 0 0;font:700 1rem var(--display)}
 .pv-frame{overflow:auto;background:#E9ECEF;padding:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
 .pv-page{width:100%;max-width:820px;height:auto;background:#fff;box-shadow:0 1px 4px #0003}
 .pv-wait{margin:auto;padding:20px;text-align:center}
+.pm-who .pill{white-space:normal;max-width:100%}
+/* Kenyan flag colours for every dashboard: black, red, green and white.
+   Each role keeps its own header colour so people know where they are. Buttons are green everywhere,
+   so red is kept for warnings and urgent results. */
+:root[data-app-theme="chw"]{--head:#006B3F;--head-ink:#FFFFFF;--head-muted:#CFE9DA;--primary:#006B3F;--primary-ink:#FFFFFF;--focus:#111111;--ink:#1B1F1C;--muted:#4A524C;--bg:#F2F5F2;--surface:#FFFFFF;--line:#CCD8CF;--tint:#E2F0E7;--soft:#EEF3EF;--urgent:#B00015;--urgent-bg:#FBE3E5;--ok:#006B3F;--ok-bg:#DDF0E4}
+:root[data-app-theme="clinic"]{--head:#141414;--head-ink:#FFFFFF;--head-muted:#D2D2D2;--primary:#006B3F;--primary-ink:#FFFFFF;--focus:#B00015;--ink:#1C1C1C;--muted:#4D4D4D;--bg:#F5F5F3;--surface:#FFFFFF;--line:#D6D6D0;--tint:#E6EFE8;--soft:#EFEFEC;--urgent:#B00015;--urgent-bg:#FBE3E5;--ok:#006B3F;--ok-bg:#DDF0E4}
+:root[data-app-theme="patient"]{--head:#A3121B;--head-ink:#FFFFFF;--head-muted:#F6D5D3;--primary:#006B3F;--primary-ink:#FFFFFF;--focus:#111111;--ink:#1C1C1C;--muted:#4D4D4D;--bg:#FBFAF7;--surface:#FFFFFF;--line:#D9D4CC;--tint:#E2F0E7;--soft:#F1EFEA;--urgent:#B00015;--urgent-bg:#FBE3E5;--ok:#006B3F;--ok-bg:#DDF0E4}
+/* A thin Kenyan flag under the top bar */
+.band{position:relative;padding-bottom:20px}
+.band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;background:linear-gradient(180deg,#000000 0 30%,#FFFFFF 30% 37%,#BB0000 37% 63%,#FFFFFF 63% 70%,#006600 70%)}
+.pv-back{background:#111111b3}
+.pm-item[aria-current=page]{background:var(--primary)}

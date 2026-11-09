@@ -110,7 +110,7 @@
   // ---- Page frame and shared pieces
   const ROLE = { chw: "Community health worker", clinician: "Ophthalmologist / clinician", member: "Patient" };
   const THEME = { chw: "chw", clinician: "clinic", member: "patient" };
-  const PIE = { chw: ["#2A5BD7", "#D1294B", "#0FA08F", "#C77A12", "#7A4BC2", "#3B9B4F"], clinic: ["#1C6FB5", "#C4633F", "#1F9E92", "#8A5FB8", "#5E9E4F", "#C2478A"] };
+  const PIE = { chw: ["#006B3F", "#BB0000", "#1C1C1C", "#D08A16", "#5FA777", "#8C8C8C"], clinic: ["#006B3F", "#BB0000", "#1C1C1C", "#D08A16", "#5FA777", "#8C8C8C"] };
   const LEVEL = {
     urgent: { label: "Urgent referral", head: "Possible severe DR found", cls: "urgent" }, refer: { label: "Refer", head: "Possible DR found", cls: "refer" },
     rescreen: { label: "No referral", head: "No referable DR found", cls: "ok" }, retake: { label: "Retake photo", head: "This photo can't be read", cls: "watch" },
@@ -285,8 +285,8 @@
     S.period = S.period || "today";
     frame(head + `<div id="dash" class="muted">Loading your dashboard…</div>`);
     let sum, rows = [];
-    let visits = [];
-    try { [sum, rows, visits] = await Promise.all([api("GET", "/api/chw/summary"), api("GET", "/api/chw/screenings"), api("GET", "/api/chw/visits")]); S.chwCache = { sum, rows }; cached("afrieye.chwSummary", { sum }); }
+    let visits = [], shaHelp = [];
+    try { [sum, rows, visits, shaHelp] = await Promise.all([api("GET", "/api/chw/summary"), api("GET", "/api/chw/screenings"), api("GET", "/api/chw/visits"), api("GET", "/api/chw/cover-help")]); S.chwCache = { sum, rows }; cached("afrieye.chwSummary", { sum }); }
     catch (e) { const c = S.chwCache || cached("afrieye.chwSummary"); if (!c) { const d = $("#dash"); if (d) d.textContent = "Connect to the internet to see your dashboard. You can still start a new screening."; return; } sum = c.sum; rows = c.rows || []; }
     const p = sum.periods, cur = p[S.period], d = $("#dash"), u = S.me, label = { today: "today", month: "this month", year: "this year" };
     if (!d) return;
@@ -294,7 +294,8 @@
     d.innerHTML = `<div class="dash-top"><section class="card profile"><span class="avatar big" aria-hidden="true">${esc(initials(u.name))}</span><div><h2>${esc(u.name)}</h2><p class="muted">Community health worker</p><dl class="facts"><div><dt>CHW ID</dt><dd>${esc(u.staff_id || "Not given")}</dd></div><div><dt>Area</dt><dd>${esc(u.area || "Not given")}${u.county ? ", " + esc(u.county) : ""}</dd></div><div><dt>Phone</dt><dd>${esc(u.phone)}</dd></div><div><dt>Status</dt><dd>${u.approved ? "Verified" : "Waiting for verification"}</dd></div><div><dt>Patient rating</dt><dd>${sum.ratings && sum.ratings.average ? `<span data-notr>★ ${sum.ratings.average} (${sum.ratings.count})</span>` : "No ratings yet"}</dd></div></dl></div></section>
       <section class="card cta"><img class="cta-pic" src="/static/community.jpg" alt="" loading="lazy"><h2>Ready for your next visit?</h2><p class="muted">Take or upload an eye photo. The AI scan works without internet.</p><button class="btn primary big" data-tab="screen">Start new screening</button></section></div>
       
-      ${visits.length ? `<section class="card stack"><h2>Home visit requests</h2>${visits.map((v) => `<div class="hist row between"><div><b data-notr>${esc(v.name)}</b> <span class="muted" data-notr>${esc(age(v.birth_year))} · ${esc(v.village || "")}</span><p class="small muted"><span data-notr>${esc(v.phone)} · ${esc(v.when)}</span>${v.source === "ussd" ? " · USSD" : ""}</p>${v.note ? `<p class="small" data-notr>${esc(v.note)}</p>` : ""}</div>${v.status === "open" ? `<button class="btn mini primary" data-visit="${v.id}" data-vact="accept" type="button">Accept visit</button>` : `<button class="btn mini" data-visit="${v.id}" data-vact="done" type="button">Mark visited</button>`}</div>`).join("")}</section>` : ""}
+      ${shaHelp.length ? `<section class="card stack"><h2>Help with SHA</h2><p class="small muted">${esc(t("These patients have no health cover. Help them apply: dial *147# with them or use afyayangu.go.ke. They need their national ID number."))}</p>${shaHelp.map((h) => `<div class="hist row between"><div><b data-notr>${esc(h.name)}</b> <span class="muted" data-notr>${esc(age(h.birth_year))} · ${esc(h.village || "")}</span><p class="small muted"><span data-notr>${esc(h.phone)} · ${esc(h.when)}</span> · ${esc(t(h.cover))}</p></div>${h.status === "requested" ? `<button class="btn mini primary" data-sha="${h.id}" data-shaact="start" type="button">I'll help</button>` : `<form class="row" data-shadone="${h.id}"><label class="grow"><span class="sr">SHA number</span><input name="ref" maxlength="40" placeholder="SHA number, optional"></label><button class="btn mini primary">Registered</button></form>`}</div>`).join("")}</section>` : ""}
+      ${visits.length ? `<section class="card stack"><h2>Visit requests</h2>${visits.map((v) => `<div class="hist row between"><div>${v.kind === "village" ? `<span class="pill refer">${esc(t("Village eye check"))}</span> <b data-notr>${esc(v.place || v.village || "")}</b> <span class="muted">${esc(tr("About {n} people").replace("{n}", v.people || "?"))}${v.preferred ? ` · <span data-notr>${esc(v.preferred)}</span>` : ""}</span><p class="small">${esc(t("Asked by"))} <span data-notr>${esc(v.name)}</span></p>` : `<span class="pill watch">${esc(t("Home visit"))}</span> <b data-notr>${esc(v.name)}</b> <span class="muted" data-notr>${esc(age(v.birth_year))} · ${esc(v.village || "")}</span>`}<p class="small muted"><span data-notr>${esc(v.phone)} · ${esc(v.when)}</span>${v.source === "ussd" ? " · USSD" : ""}</p>${v.note ? `<p class="small" data-notr>${esc(v.note)}</p>` : ""}</div>${v.status === "open" ? `<button class="btn mini primary" data-visit="${v.id}" data-vact="accept" type="button">Accept visit</button>` : `<button class="btn mini" data-visit="${v.id}" data-vact="done" type="button">Mark visited</button>`}</div>`).join("")}</section>` : ""}
       <section><h2>Elders scanned</h2><div class="period" role="group" aria-label="Choose a period">${[["today", "Today"], ["month", "This month"], ["year", "This year"]].map(([k, t]) => `<button class="tile pick ${S.period === k ? "on" : ""}" data-period="${k}" aria-pressed="${S.period === k}"><b>${p[k].count}</b><span>${t}</span></button>`).join("")}</div></section>
       <section class="card"><div class="chart-head"><h2>Who was scanned ${label[S.period]}</h2><p class="small muted">${cur.outcomes.urgent} urgent · ${cur.outcomes.refer} referred · ${cur.outcomes.rescreen} no referral</p></div><div class="charts">${pie("By age", cur.ages, PIE.chw)}${pie("By area", cur.areas, PIE.chw)}</div></section>
       <section><div class="row between"><h2>Recent patients</h2><button class="link" data-tab="patients">See all</button></div><div class="stack top">${rows.slice(0, 4).map(patientLine).join("") || `<p class="muted">No patients yet.</p>`}</div></section>`;
@@ -420,7 +421,7 @@
     box.innerHTML = `<section class="card"><div class="eye-head"><div class="person">${avatar(s.patient.id, s.patient.has_face, s.patient.name, true)}<div><h2>${esc(s.patient.name)}</h2><p class="muted">${esc(age(s.patient.birth_year))}${s.patient.village ? " · " + esc(s.patient.village) : ""}</p><p class="muted small">Referred by ${esc(s.chw.name)}, ${esc(s.chw.phone)}${s.referred_to ? ` · To ${esc(s.referred_to)}` : ""}</p></div></div><span class="pill ${LEVEL[s.outcome].cls}">${esc(LEVEL[s.outcome].label)}</span></div>
       <p class="top">${esc(s.ai_text)} <span class="muted">This is the AI's first result, from ${esc(s.model || "the phone")}. Please grade the photos yourself.</span></p>
       ${s.deadline ? `<p class="note ${s.deadline.days_left <= 4 ? "bad" : "warn"} top">${s.deadline.escalated ? esc(t("This referral passed 7 days without action, so your hospital was emailed.")) : esc(tr("Please respond by {due}. That's {n} days left.").replace("{due}", s.deadline.due).replace("{n}", s.deadline.days_left))}</p>` : ""}</section>
-      <section class="card stack"><div class="row between"><h3>Health history</h3><button class="btn mini" data-report="${s.patient.id}" type="button">Preview and send PDF report</button></div>${historyFacts(s.patient.conditions)}</section>
+      <section class="card stack"><div class="row between"><h3>Health history</h3><button class="btn mini" data-report="${s.patient.id}" type="button">Preview and send PDF report</button></div>${historyFacts(s.patient.conditions)}${coverFacts(s.patient.cover)}</section>
       <div class="eyes">${["right", "left"].map((k) => { const e = byEye[k]; return e ? `<article class="card eye"><div class="eye-head"><h3>${EYE[k]}</h3><span class="pill ${LEVEL[e.level].cls}">${esc(LEVEL[e.level].label)}</span></div><img class="fundus" src="/api/screenings/${s.id}/photo/${e.eye}" alt="${EYE[k]} retinal photo"><dl class="scores"><div><dt>DR score</dt><dd>${fmtPct(e.p_referable)}</dd></div><div><dt>Severe score</dt><dd>${fmtPct(e.p_urgent)}</dd></div><div><dt>Quality</dt><dd>${fmtPct(e.p_quality)}</dd></div></dl>${e.retakes ? `<p class="small muted">Retaken ${e.retakes} time${e.retakes > 1 ? "s" : ""}.</p>` : ""}<label>Your grade, ${EYE[k].toLowerCase()}<select data-book="${k}">${GRADE_OPTIONS.map(([v, t]) => `<option value="${v}" ${b[k] === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></article>` : `<article class="card eye muted"><h3>${EYE[k]}</h3><p>Not scanned.</p></article>`; }).join("")}</div>
       <section class="card stack"><h2>Confirm the appointment</h2><div class="three"><label>Date<input type="date" data-book="date" value="${esc(b.date)}"></label><label>Time<input type="time" data-book="time" value="${esc(b.time)}"></label><label>Clinic<input data-book="location" maxlength="60" value="${esc(b.location)}"></label></div>
         <label>Note<textarea data-book="note" rows="2" maxlength="500" placeholder="Required if no visit is needed. The CHW sees this.">${esc(b.note)}</textarea></label>
@@ -459,7 +460,8 @@
     if (!core || /^[\d\s.,:%·/+-]+$/.test(core)) return text;
     let hit = d[core];
     if (!hit) for (const [re, names, v] of patterns(lang)) { const m = core.match(re); if (m) { hit = names.reduce((s, n, i) => s.replace("{" + n + "}", tr(m[i + 1], lang).trim()), v); break; } }
-    if (!hit) { if (window.__missing) window.__missing.add(core); return text; }
+    // Words not translated yet in a Kenyan language show in Kiswahili, which more people know than English.
+    if (!hit) { if (window.__missing) window.__missing.add(core); return lang !== "sw" ? tr(text, "sw") : text; }
     return text.replace(core, hit);
   }
   const t = (s) => tr(s);
@@ -489,9 +491,26 @@
   const langPicker = (id) => `<label class="lang-pick"><span class="sr">Language</span><select id="${id}" data-notr aria-label="Language">${LANGS.map(([c, n]) => `<option value="${c}" ${S.lang === c ? "selected" : ""}>${n}</option>`).join("")}</select></label>`;
 
   // ---- Reading aloud, with the phone's own voices
+  // Voices: a soft Kenyan woman's voice when the phone or browser has one, at the speed the user chooses.
+  // Microsoft Edge has Kenyan neural voices (Asilia for English, Zuri for Kiswahili). Android has Kiswahili (Kenya) in Google's voices.
+  const FEMALE = /asilia|zuri|female|woman|zira|aria|jenny|sonia|libby|hazel|susan|samantha|karen|moira|tessa|fiona|victoria|serena|catherine|natasha|emma|ava|allison|neerja|veena|rehema|imani|amani|wanjiku|achieng/i;
+  const MALE = /chilemba|rafiki|\bmale\b|\bman\b|david|mark|george|james|daniel|guy|ryan|thomas|alex|fred|arthur|oliver|liam|william/i;
+  function voiceScore(v, code) {
+    const lang = v.lang.toLowerCase().replace("_", "-");
+    if (!lang.startsWith(code)) return -1;
+    let sc = 10;
+    if (lang.endsWith("-ke")) sc += 40;                       // Kenyan accent first
+    else if (code === "en" && /-(tz|ug|ng|za|gh)$/.test(lang)) sc += 15;  // then another African English accent
+    if (FEMALE.test(v.name)) sc += 20; else if (MALE.test(v.name)) sc -= 20;
+    if (/natural|neural|online|enhanced|premium/i.test(v.name)) sc += 8;  // smoother voices sound softer
+    return sc;
+  }
   function voiceFor(code) {
     const vs = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-    return vs.find((v) => v.lang.toLowerCase().replace("_", "-").startsWith(code + "-")) || vs.find((v) => v.lang.toLowerCase().startsWith(code));
+    if (PREFS.voice) { const own = vs.find((v) => v.name === PREFS.voice && v.lang.toLowerCase().startsWith(code)); if (own) return own; }
+    let best = null, top = -1;
+    for (const v of vs) { const sc = voiceScore(v, code); if (sc > top) { top = sc; best = v; } }
+    return best;
   }
   function speak(text) {
     if (!("speechSynthesis" in window)) return toast(t("This phone can't read aloud."));
@@ -503,8 +522,17 @@
       toast(sw ? tr("This phone has no {language} voice, so it reads with a Kiswahili voice.").replace("{language}", name) : tr("This phone has no {language} voice, so it reads with its default voice.").replace("{language}", name));
       v = sw;
     }
-    const u = new SpeechSynthesisUtterance(text); if (v) { u.voice = v; u.lang = v.lang; } u.rate = 0.9;
+    const u = new SpeechSynthesisUtterance(text); if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = +PREFS.rate || 0.85; u.pitch = +PREFS.pitch || 1.1; u.volume = 1;   // a little slower and lighter than normal, so it sounds gentle
     speechSynthesis.speak(u);
+  }
+  if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { if (S.view === "settings") fillVoices(); };
+  function fillVoices() {
+    const sel = $("#voice-pick"); if (!sel) return;
+    const vs = speechSynthesis.getVoices().filter((v) => /^(en|sw)/i.test(v.lang)).sort((a, b) => Math.max(voiceScore(b, "en"), voiceScore(b, "sw")) - Math.max(voiceScore(a, "en"), voiceScore(a, "sw")));
+    const ke = vs.some((v) => /-ke$/i.test(v.lang.replace("_", "-")));
+    sel.innerHTML = `<option value="">${esc(t("Automatic: a Kenyan woman's voice if this device has one"))}</option>` + vs.map((v) => `<option value="${esc(v.name)}" ${PREFS.voice === v.name ? "selected" : ""}>${esc(v.name)} (${esc(v.lang)})${/-ke$/i.test(v.lang.replace("_", "-")) ? " 🇰🇪" : ""}</option>`).join("");
+    const n = $("#voice-note"); if (n) n.hidden = ke;
   }
   function speakEl(sel) {
     const el = $(sel); if (!el) return;
@@ -524,7 +552,7 @@
   };
 
   // ---- Settings that stay on this device
-  const PREFS = { mode: "light", size: "normal", font: "standard" };
+  const PREFS = { mode: "light", size: "normal", font: "standard", rate: 0.85, pitch: 1.1, voice: "" };
   function loadPrefs() { try { Object.assign(PREFS, JSON.parse(localStorage.getItem("afrieye.prefs") || "{}")); } catch (e) { /* defaults */ } applyPrefs(); }
   function applyPrefs() { const r = document.documentElement; r.dataset.mode = PREFS.mode; r.dataset.size = PREFS.size; r.dataset.font = PREFS.font; try { localStorage.setItem("afrieye.prefs", JSON.stringify(PREFS)); } catch (e) { /* this visit only */ } }
 
@@ -551,7 +579,7 @@
 
   // ---- The built-in assistant
   function kbAnswer(q) {
-    const role = S.me.role, lang = S.lang === "sw" ? "sw" : "en", norm = (x) => " " + x.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ") + " ";
+    const role = S.me.role, lang = S.lang === "en" ? "en" : "sw", norm = (x) => " " + x.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ") + " ";
     const text = norm(q); let best = null, score = 0;
     for (const e of window.AFRIEYE_KB || []) {
       if (!e.roles.includes(role)) continue;
@@ -563,11 +591,11 @@
     return best.a[lang];
   }
   function renderAssistant() {
-    const lang = S.lang === "sw" ? "sw" : "en", qs = (window.AFRIEYE_KB || []).filter((e) => e.roles.includes(S.me.role)).slice(0, 8);
+    const lang = S.lang === "en" ? "en" : "sw", qs = (window.AFRIEYE_KB || []).filter((e) => e.roles.includes(S.me.role)).slice(0, 8);
     S.chat = S.chat || [];
     frame(`<div class="vstack"><div class="row between"><h2>Ask AfriEye</h2><button class="btn" data-act="close-view">Back</button></div>
       <p class="muted">Ask about eye health, diabetes or using AfriEye. Answers come from AfriEye's prepared guidance, and work without internet.</p>
-      ${S.lang !== "en" && S.lang !== "sw" ? `<p class="small muted">Answers are in English or Kiswahili for now.</p>` : ""}
+      ${S.lang !== "en" && S.lang !== "sw" ? `<p class="small muted">Answers are in Kiswahili for now.</p>` : ""}
       <div class="chips" data-notr>${qs.map((e, i) => `<button class="chip" data-askq="${i}" type="button">${esc(e.q[lang])}</button>`).join("")}</div>
       <div class="chat" id="chat" data-notr>${S.chat.map((m, i) => m.me ? `<p class="bubble me">${esc(m.text)}</p>` : `<div class="bubble ai" id="ans-${i}"><p>${esc(m.text)}</p><button class="btn mini read" data-speak="#ans-${i}" type="button">${ICON.speaker}${lang === "sw" ? "Soma kwa sauti" : "Read aloud"}</button></div>`).join("")}</div>
       <form id="askform" class="row"><label class="grow"><span class="sr">Your question</span><input name="q" required autocomplete="off" placeholder="Type your question"></label><button class="btn primary">Ask</button></form></div>`);
@@ -584,7 +612,11 @@
   async function renderSettings() {
     const u = S.me, box = u.role === "chw" ? await Store.all() : [];
     frame(`<div class="vstack"><div class="row between"><h2>Settings</h2><button class="btn" data-act="close-view">Back</button></div>
-      <section class="card stack"><h3>Language and voice</h3>${langPicker("lang-settings")}<p class="small muted">Languages without a translation yet show English. Read aloud uses this phone's voices.</p><button class="btn" data-act="test-voice" type="button">${ICON.speaker}Test the voice</button></section>
+      <section class="card stack"><h3>Language and voice</h3>${langPicker("lang-settings")}<p class="small muted">Words not translated yet into your language show in Kiswahili. Read aloud uses this phone's voices.</p><label>Voice<select id="voice-pick" data-notr></select></label>
+        <div class="two"><label>Speed <output id="rate-out">${speedName(PREFS.rate)}</output><input type="range" id="pref-rate" min="0.6" max="1.3" step="0.05" value="${PREFS.rate}"></label>
+        <label>Softness <output id="pitch-out">${PREFS.pitch > 1.15 ? t("Lighter") : PREFS.pitch < 0.95 ? t("Deeper") : t("Normal")}</output><input type="range" id="pref-pitch" min="0.8" max="1.4" step="0.05" value="${PREFS.pitch}"></label></div>
+        <div id="voice-note" class="note warn small" hidden>This device has no Kenyan voice yet. On a laptop, open AfriEye in Microsoft Edge to get the Kenyan voices Asilia (English) and Zuri (Kiswahili). On Android, open Settings, then Text-to-speech, choose Speech Services by Google and install Kiswahili (Kenya).</div>
+        <button class="btn" data-act="test-voice" type="button">${ICON.speaker}Test the voice</button></section>
       <section class="card stack"><h3>Appearance</h3>
         <fieldset><legend>Theme</legend><div class="row">${[["light", "Light"], ["dark", "Dark"], ["auto", "Follow this phone"]].map(([k, n]) => `<label class="check"><input type="radio" name="pref-mode" value="${k}" ${PREFS.mode === k ? "checked" : ""}> ${n}</label>`).join("")}</div></fieldset>
         <fieldset><legend>Text size</legend><div class="row">${[["normal", "Normal"], ["large", "Large"], ["xl", "Extra large"]].map(([k, n]) => `<label class="check"><input type="radio" name="pref-size" value="${k}" ${PREFS.size === k ? "checked" : ""}> ${n}</label>`).join("")}</div></fieldset>
@@ -600,19 +632,31 @@
         ${u.role === "chw" ? `<p class="muted">${box.length} screening${box.length === 1 ? "" : "s"} saved on this phone and not sent yet.</p><div class="row"><button class="btn" data-act="backup-device" type="button">Back up screenings on this phone</button><label class="btn" tabindex="0"><input type="file" accept="application/json,.json" id="restore-file" hidden>Restore from a backup</label><button class="btn danger" data-act="clear-device" type="button">Delete data saved on this phone</button></div>` : ""}
         ${u.role === "member" ? `<form id="delform" class="stack"><h4>Delete my account and records</h4><p class="muted">This permanently deletes your eye records, photos, reports and appointments. It can't be undone.</p><label>Type your password to confirm<input name="password" type="password" required></label><button class="btn danger">Delete everything</button></form>` : `<p class="small muted">All records are backed up automatically each day. To restore a backup, ask your administrator.</p>`}
       </section></div>`);
+      fillVoices();
   }
+  const speedName = (r) => (r <= 0.75 ? t("Slow") : r >= 1.05 ? t("Fast") : t("Normal"));
   function download(name, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
 
   // ---- Shared pieces for health history, reports and reviews
   const CONDS = ["High blood pressure", "Kidney disease", "Heart disease", "High cholesterol", "Cataract", "Glaucoma", "Previous eye surgery or laser", "Pregnancy", "HIV", "Smoking"];
   const DTYPES = ["Type 1", "Type 2", "Not sure"];
+  const COVERS = [["sha", "SHA (Social Health Authority)"], ["ngo", "NGO or charity support"], ["private", "Private insurance"], ["none", "No cover"], ["unsure", "Not sure"]];
+  const SHA_HOW = "To apply for SHA yourself, dial *147# or visit afyayangu.go.ke. You need your national ID number.";
+  function coverFacts(cv) {
+    if (!cv || !cv.cover) return `<p class="muted">Health cover not recorded.</p>`;
+    const help = { requested: t("Asked a health worker for help to apply for SHA"), helping: cv.helper ? tr("{name} is helping them apply for SHA").replace("{name}", cv.helper.name) : t("A health worker is helping them apply for SHA"), registered: t("Registered for SHA with a health worker's help") }[cv.help];
+    return `<dl class="facts one"><div><dt>Health cover</dt><dd>${esc(t(cv.label))}${cv.ref ? ` · <span data-notr>${esc(cv.ref)}</span>` : ""}</dd></div>${help ? `<div><dt>SHA application</dt><dd data-notr>${esc(help)}</dd></div>` : ""}</dl>`;
+  }
   function historyCard(f) {
     const h = f.history;
     return `<section class="card stack"><h2>Health history</h2><p class="muted small">Record this before the eye photos. The eye specialist and the patient will see it.</p>
       <fieldset><legend>Type of diabetes</legend><div class="row">${DTYPES.map((d) => `<label class="check"><input type="radio" name="dtype" data-hist="diabetes_type" value="${d}" ${h.diabetes_type === d ? "checked" : ""}> ${d}</label>`).join("")}</div></fieldset>
       <div class="two"><label>Years with diabetes<input data-hist="years" inputmode="numeric" maxlength="2" value="${esc(h.years)}"></label><label class="check pad-top"><input type="checkbox" data-hist="insulin" ${h.insulin ? "checked" : ""}> Uses insulin</label></div>
       <fieldset><legend>Other conditions</legend><div class="conds">${CONDS.map((c) => `<label class="check"><input type="checkbox" data-cond="${c}" ${h.items.includes(c) ? "checked" : ""}> ${c}</label>`).join("")}</div></fieldset>
-      <label>Other notes, such as medicines<textarea data-hist="notes" rows="2" maxlength="300">${esc(h.notes)}</textarea></label></section>`;
+      <label>Other notes, such as medicines<textarea data-hist="notes" rows="2" maxlength="300">${esc(h.notes)}</textarea></label>
+      <fieldset><legend>Health cover for eye care</legend><div class="conds">${COVERS.map(([k, n]) => `<label class="check"><input type="radio" name="cover" data-hist="cover" value="${k}" ${h.cover === k ? "checked" : ""}> ${n}</label>`).join("")}</div></fieldset>
+      ${h.cover === "sha" || h.cover === "ngo" || h.cover === "private" ? `<label>${h.cover === "sha" ? "SHA number, if they have it" : h.cover === "ngo" ? "Name of the NGO or charity" : "Insurance company"}<input data-hist="cover_ref" maxlength="40" value="${esc(h.cover_ref || "")}"></label>` : ""}
+      ${h.cover === "none" || h.cover === "unsure" ? `<div class="note warn stack small-gap"><label class="check"><input type="checkbox" data-hist="cover_help" ${h.cover_help ? "checked" : ""}> I will help them apply for SHA</label><p class="small">${SHA_HOW}</p></div>` : ""}</section>`;
   }
   function historyFacts(c) {
     if (!c) return `<p class="muted">Not recorded.</p>`;
@@ -707,6 +751,8 @@
     assistant: svg("M4 5h16v11H9l-5 4z"),
     settings: svg("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"),
     menu: svg("M4 6h16M4 12h16M4 18h16"),
+    visit: svg("M3 21h18M5 21V11l7-5 7 5v10M10 21v-5h4v5M12 2v2"),
+    cover: svg("M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"),
     logout: svg("M14 4h5v16h-5M10 8l-4 4 4 4M6 12h11"),
   };
   async function renderFamily(pid) {
@@ -723,7 +769,7 @@
     const chooser = list.length > 1 ? `<label>Whose record?<select id="who" data-notr>${list.map((p) => `<option value="${p.id}" ${p.id === pid ? "selected" : ""}>${esc(p.name)}${p.relation && p.relation !== "Self" ? ` (${esc(p.relation)})` : ""}</option>`).join("")}</select></label>` : "";
 
     const MENU = [
-      ["home", "My eye health"], ["profile", "Profile"], ["appointments", "Appointments"], ["reminders", "Reminders"], ["emergency", "Emergency"], ["reports", "Reports"],
+      ["home", "My eye health"], ["profile", "Profile"], ["appointments", "Appointments"], ["reminders", "Reminders"], ...(owner ? [["visit", "Request a CHW visit"]] : []), ["cover", "Health cover"], ["emergency", "Emergency"], ["reports", "Reports"],
       ...(owner ? [["care", "Rate your care"], ["family", "Family"]] : []), ["messages", "Messages"],
     ];
     const keys = MENU.map((m) => m[0]); if (S.ptab && !keys.includes(S.ptab)) S.ptab = null;
@@ -738,7 +784,7 @@
           ${owner ? `<div class="row top"><label class="btn mini" tabindex="0"><input type="file" accept="image/*" capture="user" data-face="own" hidden>Take photo</label><label class="btn mini" tabindex="0"><input type="file" accept="image/*" data-face="own" hidden>Upload photo</label>${P.has_face ? `<button class="link" data-act="face-del">Remove</button>` : ""}</div>` : ""}</div></section>
         <section class="card stack"><h3>Your details</h3><dl class="facts one"><div><dt>Condition</dt><dd>${esc(d.condition ? d.condition : "Waiting for a specialist result")}</dd></div><div><dt>Eye doctor</dt><dd data-notr>${esc(d.doctor || t("Not assigned yet"))}</dd></div><div><dt>Community health worker</dt><dd data-notr>${d.chw ? `${esc(d.chw.name)}, ${esc(d.chw.phone)}` : esc(t("Not assigned yet"))}</dd></div><div><dt>Phone</dt><dd data-notr>${esc(P.phone)}</dd></div></dl>
           ${owner ? `<label>Your location<select id="myarea">${areaOptions(P.area_id)}</select></label><label class="check"><input type="checkbox" id="smsok" ${P.sms_consent ? "checked" : ""}> Send me appointment and result SMS and email</label>` : ""}</section>
-        <section class="card stack"><h3>Health history</h3>${historyFacts(P.conditions)}</section>`,
+        <section class="card stack"><h3>Health history</h3>${historyFacts(P.conditions)}${coverFacts(d.cover)}</section>`,
       appointments: () => `<section class="card stack" id="appt-card"><h3>Next appointment</h3>${next ? `<p class="big-text" data-notr>${esc(next.when_text)}</p><p data-notr>${esc(next.location)}</p><p class="muted" data-notr>${esc(next.doctor)}</p><div>${readBtn("#appt-card")}</div>` : `<p class="muted">None booked.</p>`}</section>
         ${future.length > 1 || past.length ? `<section class="card stack"><h3>All appointments</h3>${future.map((a) => `<p><b data-notr>${esc(a.when_text)}</b> · <span data-notr>${esc(a.location)}${a.doctor ? ", " + esc(a.doctor) : ""}</span></p>`).join("")}${past.length ? `<h4>Past</h4>${past.slice(0, 5).map((a) => `<p class="small muted" data-notr>${esc(a.when_text)}, ${esc(a.location)}${a.doctor ? ", " + esc(a.doctor) : ""}</p>`).join("")}` : ""}</section>` : ""}
         ${owner ? `<section class="card stack"><h3>Book a consultation</h3>${waitingConsult ? `<p class="muted">Your request is waiting for the clinic. They'll reply by SMS.</p>` : `<form id="consult" class="stack"><label>Hospital, nearest first<select name="hospital" required data-notr>${hlist.map((h) => `<option value="${h.id}">${esc(h.name)}${km(h)}</option>`).join("")}</select></label><label>Preferred date<input type="date" name="date" required value="${defaultDate()}"></label><label>What would you like to discuss?<textarea name="reason" rows="2" maxlength="300" required></textarea></label><button class="btn primary">Request consultation</button></form>`}
@@ -748,6 +794,26 @@
           <form id="remform" class="stack" data-appt="${next.id}"><div class="two"><label>When<select name="when" id="rem-when"><option value="day_before">The day before</option><option value="morning">On the morning, at 7:00</option><option value="two_hours">2 hours before</option><option value="custom">Choose a time</option></select></label><label>Time, if chosen<input type="datetime-local" name="at"></label></div>
           <fieldset><legend>Remind me by</legend><div class="row"><label class="check"><input type="checkbox" name="ch" value="app" checked> App alert</label><label class="check"><input type="checkbox" name="ch" value="sms" checked> SMS</label><label class="check"><input type="checkbox" name="ch" value="email" ${S.me.email ? "" : "disabled"}> Email</label></div>${S.me.email ? "" : `<p class="small muted">Add your email in Settings to get email reminders.</p>`}</fieldset><button class="btn primary">Set reminder</button></form>`
         : `<p class="muted">You have no appointment booked, so there's nothing to remind you about yet.</p><div><button class="btn" data-ptab="appointments" type="button">Book a consultation</button></div>`}</section>`,
+      cover: () => {
+        const cv = d.cover || {}, c = cv.cover || "", st = cv.help, hp = cv.helper;
+        const status = st === "requested" ? `<div class="note warn">${esc(t("Your request is waiting for a health worker in your area. They'll SMS you."))}</div>`
+          : st === "helping" ? `<div class="note ok">${esc(t("A health worker is helping you apply for SHA:"))} <b data-notr>${esc(hp ? hp.name + ", " + hp.phone : "")}</b>. ${esc(t("Keep your national ID card ready."))}</div>`
+          : st === "registered" ? `<div class="note ok">${esc(t("You are registered with SHA. Show your ID card at the hospital."))}</div>` : "";
+        return `<section class="card stack"><h3>How is your eye care paid for?</h3><p class="muted">This helps your health worker and eye doctor plan your care. SHA covers many eye and diabetes services at government and approved hospitals.</p>${status}
+          ${owner ? `<form id="coverform" class="stack"><fieldset><legend>Health cover</legend><div class="conds">${COVERS.map(([k, n]) => `<label class="check"><input type="radio" name="cover" value="${k}" ${c === k ? "checked" : ""} required> ${n}</label>`).join("")}</div></fieldset>
+            <label>SHA number, NGO or insurance name, optional<input name="ref" maxlength="40" value="${esc(cv.ref || "")}"></label>
+            ${st === "helping" || st === "requested" ? "" : `<label class="check"><input type="checkbox" name="help"> I have no cover. Ask a health worker to help me apply for SHA</label>`}
+            <button class="btn primary">Save</button></form>` : coverFacts(d.cover)}</section>
+          <section class="card stack"><h3>Apply for SHA yourself</h3><p>${esc(t(SHA_HOW))}</p><p class="small muted">${esc(t("You can also ask at your nearest health centre or Huduma Centre."))}</p></section>`;
+      },
+      visit: () => {
+        const vv = d.village_visit, place = P.village || "";
+        return `<section class="card stack"><h3>Visit me at home</h3><p class="muted">A community health worker from your area comes to your home to check your eyes.</p>${d.visit ? `<p>${d.visit.status === "accepted" ? `${t("A health worker will visit you:")} <b data-notr>${esc(d.visit.name)}, ${esc(d.visit.phone)}</b>` : t("Your visit request is waiting for a health worker in your area.")}</p>` : `<button class="btn primary big" data-act="ask-visit" type="button">Ask a health worker to visit me</button>`}</section>
+        <section class="card stack"><h3>Visit my village</h3><p class="muted">Ask a health worker to come to your village to check the eyes of several people with diabetes on one day, such as at a church, school or chief's office.</p>
+          ${vv ? `<p>${vv.status === "accepted" ? `${t("A health worker will come to the village:")} <b data-notr>${esc(vv.name)}, ${esc(vv.phone)}</b>` : t("Your village visit request is waiting for a health worker in your area.")}</p><p class="small muted" data-notr>${esc(vv.place || "")} · ${esc(tr("About {n} people").replace("{n}", vv.people))}${vv.preferred ? " · " + esc(vv.preferred) : ""}</p>`
+          : `<form id="villageform" class="stack"><label>Meeting place<input name="place" maxlength="80" required value="${esc(place)}" placeholder="Church, school or chief's office"></label><div class="two"><label>How many people need an eye check?<input name="people" type="number" min="2" max="200" required value="10"></label><label>Preferred date<input type="date" name="date" value="${defaultDate()}"></label></div><label>Anything the health worker should know?<textarea name="note" rows="2" maxlength="200"></textarea></label><button class="btn primary">Request a village visit</button></form>`}</section>
+        <p class="small muted">No internet? Dial the AfriEye USSD code on any phone and choose 2.</p>`;
+      },
       emergency: () => `<section class="result urgent" id="sos-card"><h2>Go to a hospital today if you have:</h2><ul class="todo"><li>Sudden loss of sight, in one or both eyes</li><li>A dark curtain or shadow across your vision</li><li>Many new floaters or flashes of light</li><li>Strong eye pain or a red, painful eye</li></ul><p><b>Emergency numbers: 999 or 112</b></p><div>${readBtn("#sos-card")}</div></section>
         <section class="card stack"><h3>Nearest hospitals with eye care</h3>${hlist.slice(0, 4).map((h) => `<p><b data-notr>${esc(h.name)}</b><span class="muted" data-notr>${km(h)}</span></p>`).join("")}</section>
         ${owner ? `<section class="card stack"><h3>Get help at home</h3>${d.visit ? `<p>${d.visit.status === "accepted" ? `${t("A health worker will visit you:")} <b data-notr>${esc(d.visit.name)}, ${esc(d.visit.phone)}</b>` : t("Your visit request is waiting for a health worker in your area.")}</p>` : `<button class="btn primary big" data-act="ask-visit" type="button">Ask a health worker to visit me</button>`}
@@ -879,6 +945,14 @@
       try { const r = await api("POST", "/api/auth/register", fd); S.regPhone = fd.phone; S.testCode = r.test_code || null; S.authMode = "code"; say(); render(); } catch (e) { say("bad", e.message); render(); }
     } else if (form.id === "patient") {
       form.querySelector(".btn.primary").disabled = true; await submitPatient();
+    } else if (form.id === "coverform") {
+      const fd = new FormData(form);
+      try { await api("POST", `/api/patients/${S.patient}/cover`, { cover: fd.get("cover"), ref: fd.get("ref"), help: fd.get("help") === "on" }); toast(fd.get("help") === "on" ? t("Request sent. A health worker in your area will SMS you.") : t("Saved.")); } catch (e) { toast(tr(e.message)); }
+      renderFamily();
+    } else if (form.id === "villageform") {
+      const fd = Object.fromEntries(new FormData(form)); fd.kind = "village"; form.querySelector(".btn.primary").disabled = true;
+      try { await api("POST", `/api/patients/${S.patient}/visit`, fd); toast(t("Request sent. A health worker in your area will SMS you.")); } catch (e) { toast(tr(e.message)); }
+      renderFamily();
     } else if (form.id === "consult") {
       const fd = Object.fromEntries(new FormData(form));
       try { await api("POST", `/api/patients/${S.patient}/consultations`, fd); say("ok", "Request sent. The clinic will reply by SMS."); } catch (e) { say("bad", e.message); }
@@ -897,7 +971,7 @@
 
   // ---- Handlers for settings, voice, assistant, reports, reminders, reviews and visits
   document.addEventListener("click", async (ev) => {
-    const t2 = ev.target.closest("[data-speak],[data-askq],[data-remdel],[data-ropen],[data-rshare],[data-rdown],[data-report],[data-held],[data-visit],[data-act=settings],[data-act=alerts],[data-act=assistant],[data-act=close-view],[data-act=test-voice],[data-act=allow-alerts],[data-act=export],[data-act=backup-device],[data-act=clear-device],[data-act=ask-visit]");
+    const t2 = ev.target.closest("[data-speak],[data-askq],[data-remdel],[data-ropen],[data-rshare],[data-rdown],[data-report],[data-held],[data-visit],[data-sha],[data-act=settings],[data-act=alerts],[data-act=assistant],[data-act=close-view],[data-act=test-voice],[data-act=allow-alerts],[data-act=export],[data-act=backup-device],[data-act=clear-device],[data-act=ask-visit]");
     if (!t2) return;
     const a = t2.dataset.act;
     if (t2.dataset.speak) return speakEl(t2.dataset.speak);
@@ -915,6 +989,7 @@
       } catch (e) { if (e.name !== "AbortError") toast(tr(e.message)); }
       return;
     }
+    if (t2.dataset.sha) { try { await api("POST", `/api/chw/cover-help/${t2.dataset.sha}/start`, {}); toast(t("The patient was sent an SMS.")); } catch (e) { toast(tr(e.message)); } return renderChw(); }
     if (t2.dataset.visit) { try { await api("POST", `/api/chw/visits/${t2.dataset.visit}/${t2.dataset.vact}`, {}); toast(t2.dataset.vact === "accept" ? t("Visit accepted. The patient was sent an SMS.") : t("Marked as visited.")); } catch (e) { toast(tr(e.message)); } return renderChw(); }
     if (a === "settings" || a === "alerts" || a === "assistant") { keepForm(); S.view = a; say(); window.scrollTo(0, 0); return render(); }
     if (a === "close-view") { S.view = null; say(); return render(); }
@@ -934,7 +1009,9 @@
     const el = ev.target;
     if (el.id && el.id.startsWith("lang-")) { setLang(el.value, true); $$("select[id^=lang-]").forEach((s) => { s.value = S.lang; }); if (S.view === "assistant") renderAssistant(); return; }
     if (el.name && el.name.startsWith("pref-")) { PREFS[el.name.slice(5)] = el.value; return applyPrefs(); }
-    if (el.dataset.hist && S.flow) { S.flow.history[el.dataset.hist] = el.type === "checkbox" ? el.checked : el.value; if (el.dataset.hist === "diabetes_type") renderChw(); return; }
+    if (el.id === "voice-pick") { PREFS.voice = el.value; applyPrefs(); return speak(t("Hello. This is how AfriEye reads aloud.")); }
+    if (el.id === "pref-rate" || el.id === "pref-pitch") { PREFS[el.id.slice(5)] = +el.value; applyPrefs(); return speak(t("Hello. This is how AfriEye reads aloud.")); }
+    if (el.dataset.hist && S.flow) { S.flow.history[el.dataset.hist] = el.type === "checkbox" ? el.checked : el.value; if (el.dataset.hist === "diabetes_type" || el.dataset.hist === "cover") renderChw(); return; }
     if (el.dataset.cond && S.flow) { const h = S.flow.history; h.items = el.checked ? h.items.concat(el.dataset.cond) : h.items.filter((x) => x !== el.dataset.cond); return; }
     if (el.id === "restore-file" && el.files[0]) {
       try {
@@ -945,7 +1022,10 @@
       return renderSettings();
     }
   });
-  document.addEventListener("input", (ev) => { const el = ev.target; if (el.dataset.hist && S.flow && el.type !== "radio" && el.type !== "checkbox") S.flow.history[el.dataset.hist] = el.value; });
+  document.addEventListener("input", (ev) => { const el = ev.target;
+    if (el.id === "pref-rate") $("#rate-out").textContent = speedName(+el.value);
+    if (el.id === "pref-pitch") $("#pitch-out").textContent = +el.value > 1.15 ? t("Lighter") : +el.value < 0.95 ? t("Deeper") : t("Normal");
+    if (el.dataset.hist && S.flow && el.type !== "radio" && el.type !== "checkbox") S.flow.history[el.dataset.hist] = el.value; });
   document.addEventListener("submit", async (ev) => {
     const f = ev.target, fd = new FormData(f);
     const done = (msg) => { toast(msg); };
@@ -957,6 +1037,7 @@
       try { await api("POST", `/api/appointments/${f.dataset.appt}/reminders`, { when: fd.get("when"), at: fd.get("at"), channels: ch }); done(t("Reminder set.")); if (ch.includes("app") && "Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) { done(tr(e.message)); }
       return renderFamily();
     }
+    if (f.dataset.shadone) { ev.preventDefault(); try { await api("POST", `/api/chw/cover-help/${f.dataset.shadone}/done`, { ref: fd.get("ref") }); done(t("Saved. The patient was told by SMS.")); } catch (e) { done(tr(e.message)); } return renderChw(); }
     if (f.dataset.review) { ev.preventDefault(); try { await api("POST", `/api/patients/${S.patient}/reviews`, { target_id: +f.dataset.review, stars: +fd.get("stars"), comment: fd.get("comment") }); done(t("Thank you. Your rating was saved.")); } catch (e) { done(tr(e.message)); } return renderFamily(); }
     if (f.dataset.remail) { ev.preventDefault(); try { await api("POST", `/api/reports/${f.dataset.remail}/email`, { email: fd.get("email") }); done(t("Report emailed.")); } catch (e) { done(tr(e.message)); } }
   }, true);

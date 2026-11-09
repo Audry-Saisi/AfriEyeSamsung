@@ -310,7 +310,9 @@ def test_ussd_register_book_visit_result_and_reminder():
     assert "Book an eye doctor" in dial("") and "Kenyatta" in dial("1")
     assert dial("1*1*2").startswith("END Request sent to Kenyatta") and doc.get("/api/clinic/referrals").json["consultations"][0]["name"] == "Akinyi Otieno"
     assert dial("2*1").startswith("END Request sent") and chw.get("/api/chw/visits").json[0]["name"] == "Akinyi Otieno"
-    vid = chw.get("/api/chw/visits").json[0]["id"]; assert chw.post(f"/api/chw/visits/{vid}/accept").status_code == 200
+    assert dial("2*2").startswith("CON How many") and dial("2*2*15").startswith("END Request sent")
+    vis = chw.get("/api/chw/visits").json; assert any(v["kind"] == "village" and v["people"] == 15 for v in vis)
+    vid = vis[0]["id"]; assert chw.post(f"/api/chw/visits/{vid}/accept").status_code == 200
     out = dial("3", "+254722000111"); assert out.startswith("END Serious eye changes") or "Eye" in out; assert "Appointment:" in out
     assert dial("4*1", "+254722000111").startswith("END Done") and dial("5", "+254722000111").startswith("END Language")
     assert "Panga miadi" in dial("", "+254722000111")
@@ -337,3 +339,30 @@ def test_chw_report_goes_to_clinician_first():
     assert pat.get(f"/api/patients/{pid}").json["reports"][0]["id"] == rid
     assert pat.get(f"/api/reports/{rid}/pdf").data[:4] == b"%PDF"
     assert any(n["title"] == "Report sent to the patient" for n in chw.get("/api/notifications").json["items"])
+
+
+def test_village_visit_from_the_app():
+    app, sms = setup(); chw, doc, sid = confirmed((app, sms)); pat, pid = patient_client(app, sms)
+    assert pat.post(f"/api/patients/{pid}/visit", json={"kind": "village", "people": 1}).status_code == 400
+    assert pat.post(f"/api/patients/{pid}/visit", json={"kind": "village", "people": 12, "place": "Korogocho church", "date": "2026-11-20"}).status_code == 201
+    assert pat.post(f"/api/patients/{pid}/visit", json={"kind": "village", "people": 12}).status_code == 409
+    assert pat.post(f"/api/patients/{pid}/visit", json={}).status_code == 201  # a home visit is separate
+    v = [x for x in chw.get("/api/chw/visits").json if x["kind"] == "village"][0]
+    assert v["place"] == "Korogocho church" and v["people"] == 12
+    assert chw.post(f"/api/chw/visits/{v['id']}/accept").status_code == 200
+    rec = pat.get(f"/api/patients/{pid}").json; assert rec["village_visit"]["status"] == "accepted"
+
+
+def test_health_cover_and_sha_help():
+    app, sms = setup(); chw, doc, sid = confirmed((app, sms)); pat, pid = patient_client(app, sms)
+    assert pat.post(f"/api/patients/{pid}/cover", json={"cover": "bogus"}).status_code == 400
+    assert pat.post(f"/api/patients/{pid}/cover", json={"cover": "none", "help": True}).status_code == 200
+    rec = pat.get(f"/api/patients/{pid}").json; assert rec["cover"]["help"] == "requested"
+    lst = chw.get("/api/chw/cover-help").json; assert lst and lst[0]["id"] == pid and lst[0]["status"] == "requested"
+    assert chw.post(f"/api/chw/cover-help/{pid}/start").status_code == 200
+    assert pat.get(f"/api/patients/{pid}").json["cover"]["helper"]["name"]
+    assert chw.post(f"/api/chw/cover-help/{pid}/done", json={"ref": "SHA-123"}).status_code == 200
+    cv = pat.get(f"/api/patients/{pid}").json["cover"]; assert cv["cover"] == "sha" and cv["help"] == "registered" and cv["ref"] == "SHA-123"
+    assert not chw.get("/api/chw/cover-help").json
+    q = doc.get("/api/clinic/referrals").json; s = (q["waiting"] + q["reviewed"])[0]
+    assert "cover" in s["patient"]

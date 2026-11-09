@@ -6,3 +6,8 @@ __pycache__/
 app/.secret
 app/afrieye.db
 models/*.pt
+
+app/afrieye_v2.db
+app/*.db
+app/backups/
+app/.secret
