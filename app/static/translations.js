@@ -750,7 +750,8 @@ window.AFRIEYE_T = {
 "New eye clinicians at hospitals in your county wait here until you check their licence. This stops people pretending to be specialists.": "Matabibu wapya wa macho katika hospitali za kaunti yako wanasubiri hapa hadi ukague leseni zao. Hii inazuia watu kujifanya wataalamu.",
 "No clinicians have registered yet.": "Hakuna tabibu aliyesajiliwa bado.",
 "Approved. The clinician was told by SMS.": "Imeidhinishwa. Tabibu ameambiwa kwa SMS.",
-"Rejected. The person was told by SMS.": "Imekataliwa. Mhusika ameambiwa kwa SMS."
+"Rejected. The person was told by SMS.": "Imekataliwa. Mhusika ameambiwa kwa SMS.",
+"This is a shared demo account, so this setting is switched off. Register your own account to try it.": "Hii ni akaunti ya majaribio inayoshirikiwa, kwa hivyo mpangilio huu umezimwa. Jisajili akaunti yako ili ujaribu."
 },
 "ki": {
 "No diabetic eye damage seen": "Gũtirĩ ũgwati wa maitho wa mũrimũ wa cukari wonekete",

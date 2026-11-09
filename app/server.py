@@ -198,6 +198,12 @@ def create_app(config=None):
             return fn(*a, **k)
         return inner
 
+    def demo_locked():
+        """On a public demo, the shared demo accounts can't have their password, email or data changed by visitors."""
+        u = me(); pre = app.config.get("LOCKED_PREFIXES") or ()
+        if u and any(u["phone"].startswith(x) for x in pre):
+            abort(403, "This is a shared demo account, so this setting is switched off. Register your own account to try it.")
+
     def role_only(role, message):
         def wrap(fn):
             @wraps(fn)
@@ -422,6 +428,7 @@ def create_app(config=None):
     @app.post("/api/me/email")
     @login_required
     def my_email():
+        demo_locked()
         e = clean_email(body().get("email"))
         if e and db().execute("SELECT 1 FROM users WHERE email=? AND id<>?", (e, session["uid"])).fetchone():
             abort(409, "Another account already uses this email.")
@@ -1414,6 +1421,7 @@ def create_app(config=None):
     @app.post("/api/me/password")
     @login_required
     def change_password():
+        demo_locked()
         b = body(); u = me()
         if not check_password_hash(u["pw"] or "", str(b.get("current", ""))):
             abort(400, "Your current password is not right.")
@@ -1446,6 +1454,7 @@ def create_app(config=None):
     @app.post("/api/me/delete")
     @login_required
     def delete_mine():
+        demo_locked()
         u = me()
         if not check_password_hash(u["pw"] or "", str(body().get("password", ""))):
             abort(400, "Your password is not right.")
