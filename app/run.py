@@ -12,7 +12,7 @@ sys.path.insert(0, str(HERE))
 from places import AREA  # noqa: E402
 from server import SCHEMA, create_app, upgrade  # noqa: E402
 
-DEMO_PASSWORDS = {"chw": "demo-chw-2026", "clinician": "demo-eye-2026", "member": "demo-patient-2026"}
+DEMO_PASSWORDS = {"chw": "demo-chw-2026", "clinician": "demo-eye-2026", "member": "demo-patient-2026", "county": "demo-county-2026"}
 # Fictional people. Each demo hospital gets one fictional clinician.
 DEMO_USERS = [("+254711000001", "Amina Wanjiru", "chw", "demo-chw-2026"), ("+254711000002", "Dr. Otieno Ouma", "clinician", "demo-eye-2026")]
 DEMO_DOCTORS = {"knh": ("+254711000002", "Dr. Otieno Ouma"), "lions": ("+254711000011", "Dr. Faith Njeri"), "kikuyu_eye": ("+254711000012", "Dr. Peter Kamau"), "kitale_crh": ("+254711000013", "Dr. Ruth Chebet"),
@@ -36,10 +36,57 @@ def seed(path, sample=False):
     upgrade(con)
     for h, (phone, name) in DEMO_DOCTORS.items():  # example.org addresses are reserved for examples, so nothing reaches a real person
         con.execute("INSERT OR IGNORE INTO users(phone,name,role,pw,hospital_id,staff_id,approved,email,created) VALUES(?,?,?,?,?,?,1,?,?)", (phone, name, "clinician", eye_pw, h, "DEMO-" + h.upper(), f"{h}.eye@example.org", now))
+    con.execute("INSERT OR IGNORE INTO users(phone,name,role,pw,staff_id,approved,created) VALUES(?,?,?,?,?,1,?)", ("+254711000003", "Wambui Njoroge", "county", generate_password_hash("demo-county-2026"), "CHO-NBI-01", now))
+    con.execute("UPDATE users SET county='Nairobi' WHERE phone='+254711000003'")
     con.commit()
     if sample and not con.execute("SELECT 1 FROM screenings WHERE is_sample=1").fetchone():
         add_sample_data(con)
+    if sample and not con.execute("SELECT 1 FROM vitals").fetchone():
+        add_follow_up_samples(con)
     con.close()
+
+
+def add_follow_up_samples(con):
+    """Fictional readings, attendance, treatments and recalls, so the new screens aren't empty in a demo."""
+    from datetime import datetime, timedelta
+    from server import TZ
+    con.row_factory = sqlite3.Row; rng = random.Random(11); now = datetime.now(TZ); ts = now.timestamp()
+    chw = con.execute("SELECT id FROM users WHERE phone='+254711000001'").fetchone()["id"]; doc = con.execute("SELECT id FROM users WHERE phone='+254711000002'").fetchone()["id"]
+    pats = con.execute("SELECT p.id FROM patients p JOIN screenings s ON s.patient_id=p.id WHERE s.is_sample=1 GROUP BY p.id").fetchall()
+    for i, p in enumerate(pats):  # three readings each, a few months apart
+        g0, s0 = rng.uniform(8, 13), rng.randint(135, 165)
+        for k in range(3):
+            con.execute("INSERT INTO vitals(patient_id,by_user,by_role,glucose,glucose_kind,hba1c,sys,dia,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (p["id"], chw, "chw", round(g0 - k * rng.uniform(0.3, 1.2), 1), "random", round(rng.uniform(7, 10) - k * 0.3, 1) if k == 2 else None, s0 - k * rng.randint(2, 8), rng.randint(80, 98) - k * 2, ts - (2 - k) * 60 * 86400 - i * 3600))
+    past = con.execute("SELECT * FROM appointments WHERE when_iso<? ORDER BY when_iso", (now.strftime("%Y-%m-%dT%H:%M"),)).fetchall()
+    for j, a in enumerate(past):
+        if j % 4 == 3:
+            continue  # left for the clinician to mark in the demo
+        st = "missed" if j % 4 == 2 else "attended"
+        con.execute("UPDATE appointments SET attended=?,attended_at=?,attended_by=? WHERE id=?", (st, ts, doc, a["id"]))
+        if st == "missed":
+            con.execute("INSERT INTO followups(patient_id,chw_id,kind,appointment_id,status,created) VALUES(?,?,?,?,?,?)", (a["patient_id"], chw, "missed", a["id"], "open", ts))
+        elif j % 3 == 0:
+            con.execute("INSERT INTO treatments(patient_id,clinician_id,treatment,eye,va_right,va_left,note,created) VALUES(?,?,?,?,?,?,?,?)", (a["patient_id"], doc, rng.choice(["laser", "injection", "monitor"]), "right", rng.choice(["6/12", "6/18", "6/9"]), "6/9", "Sample data.", ts - 86400))
+    # Two people due for their next eye check
+    photos = sorted((HERE / "static" / "samples").glob("*.jpg"))
+    for k, (name, by, days, level) in enumerate([("Wanjiru Kamau", 1950, 372, None), ("Ali Mohamed", 1957, 190, "watch")]):
+        phone = f"+25472299{k:04d}"
+        uid = con.execute("INSERT INTO users(phone,name,role,approved,created) VALUES(?,?,'member',1,?)", (phone, name, ts)).lastrowid
+        hist = json.dumps(dict(items=[], diabetes_type="Type 2", years=8, insulin=False, notes=""))
+        pid = con.execute("INSERT INTO patients(name,birth_year,phone,village,area_id,sms_consent,created_by,created,conditions,recall_notified) VALUES(?,?,?,?,?,1,?,?,?,?)", (name, by, phone, "Korogocho", "korogocho", chw, ts, hist, ts)).lastrowid
+        con.execute("INSERT INTO links(patient_id,user_id,access,relation,added_by,created) VALUES(?,?,'owner','Self',?,?)", (pid, uid, chw, ts))
+        at = ts - days * 86400; outcome = "rescreen" if level is None else "refer"
+        eyes = json.dumps([dict(eye="right", level=outcome, message="Sample result.", p_referable=.1 if level is None else .5, p_urgent=.05, p_quality=.9, retakes=0)])
+        sid = con.execute("INSERT INTO screenings(client_ref,patient_id,chw_id,outcome,status,model,eyes,screened_at,created,hospital_id,referred_to,is_sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,1)",
+                          (f"sample-recall-{k}", pid, chw, outcome, "no_referral" if level is None else "no_visit", "Sample data", eyes, at, at, None if level is None else "knh", None if level is None else doc)).lastrowid
+        con.execute("INSERT INTO screening_photos VALUES(?,?,?)", (sid, "right", photos[k % len(photos)].read_bytes()))
+        if level:  # the specialist disagreed with the AI: only early changes
+            rid = con.execute("INSERT INTO results(patient_id,right_grade,worst,level,note,clinician_id,created) VALUES(?,?,?,?,?,?,?)", (pid, "mild", "mild", "watch", "Early changes only. Check again in 6 months.", doc, at + 86400)).lastrowid
+            con.execute("UPDATE screenings SET clinician_id=?,result_id=?,reviewed=? WHERE id=?", (doc, rid, at + 86400, sid))
+    con.execute("UPDATE patients SET cover='sha' WHERE id IN (SELECT id FROM patients ORDER BY id LIMIT 6)")
+    con.execute("UPDATE patients SET cover='none' WHERE id IN (SELECT id FROM patients ORDER BY id LIMIT 3 OFFSET 6)")
+    con.commit()
 
 
 def add_sample_data(con):
@@ -142,6 +189,7 @@ if __name__ == "__main__":
         print(f"  On a phone on the same Wi-Fi:  http://{lan_address()}:{port}")
     print("\nDemo sign-ins (fictional people)")
     print("  CHW:            0711 000 001   password demo-chw-2026")
+    print("  County officer: 0711 000 003   password demo-county-2026  (Nairobi County)")
     print("  Eye specialist: 0711 000 002   password demo-eye-2026   (Kenyatta National Hospital)")
     print("  Patient:        0722 000 000   password demo-patient-2026")
     print("\nNew CHW and clinician accounts are approved automatically in this demo." if not production else "\nNew CHW and clinician accounts wait for: python app/run.py approve PHONE")

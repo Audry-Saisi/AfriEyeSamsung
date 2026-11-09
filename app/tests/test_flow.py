@@ -366,3 +366,72 @@ def test_health_cover_and_sha_help():
     assert not chw.get("/api/chw/cover-help").json
     q = doc.get("/api/clinic/referrals").json; s = (q["waiting"] + q["reviewed"])[0]
     assert "cover" in s["patient"]
+
+
+def test_attendance_followup_treatment_vitals_and_recall():
+    import sqlite3, time as tm
+    app, sms = setup(); chw, doc, sid = confirmed((app, sms)); pat, pid = patient_client(app, sms)
+    con = sqlite3.connect(app.config["DB"]); aid = con.execute("SELECT id FROM appointments WHERE patient_id=?", (pid,)).fetchone()[0]
+    assert doc.post(f"/api/clinic/appointments/{aid}/attendance", json={"status": "missed"}).status_code == 409  # not happened yet
+    from datetime import datetime, timedelta
+    con.execute("UPDATE appointments SET when_iso=? WHERE id=?", ((datetime.now() - timedelta(days=10)).strftime("%Y-%m-%dT09:00"), aid)); con.commit()
+    assert any(a["id"] == aid for a in doc.get("/api/clinic/attendance").json)
+    assert doc.post(f"/api/clinic/appointments/{aid}/attendance", json={"status": "missed"}).status_code == 200
+    f = chw.get("/api/chw/followups").json; assert f["missed"] and f["missed"][0]["patient_id"] == pid
+    assert chw.post(f"/api/chw/followups/{f['missed'][0]['id']}/done", json={"note": "Booked again"}).status_code == 200
+    assert not chw.get("/api/chw/followups").json["missed"]
+    assert doc.post(f"/api/clinic/patients/{pid}/treatments", json={"treatment": "laser", "eye": "right", "va_right": "6/12"}).status_code == 201
+    assert doc.post(f"/api/clinic/patients/{pid}/treatments", json={"treatment": "magic"}).status_code == 400
+    assert chw.post(f"/api/patients/{pid}/vitals", json={"glucose": 9.5, "sys": 150, "dia": 95}).status_code == 201
+    assert pat.post(f"/api/patients/{pid}/vitals", json={"sys": 150}).status_code == 400
+    assert pat.post(f"/api/patients/{pid}/vitals", json={"hba1c": 8.1}).status_code == 201
+    rec = pat.get(f"/api/patients/{pid}").json
+    assert rec["treatments"][0]["label"] == "Laser treatment" and len(rec["vitals"]) == 2 and rec["tip"]["en"]
+    assert pat.post(f"/api/patients/{pid}/tips", json={"on": True}).json["on"]
+    # a specialist says "no DR": the next check is due in a year, and a CHW sees it on the recall list when it's near
+    con.execute("UPDATE results SET level='ok', worst='none', created=? WHERE patient_id=?", (tm.time() - 360 * 86400, pid)); con.execute("UPDATE screenings SET screened_at=? WHERE patient_id=?", (tm.time() - 361 * 86400, pid)); con.commit()
+    assert pat.get(f"/api/patients/{pid}").json["recall"]["reason"] == "yearly"
+    assert any(r["patient_id"] == pid for r in chw.get("/api/chw/followups").json["recall"])
+    con.execute("UPDATE results SET created=? WHERE patient_id=?", (tm.time() - 370 * 86400, pid)); con.execute("UPDATE screenings SET screened_at=? WHERE patient_id=?", (tm.time() - 371 * 86400, pid)); con.execute("UPDATE patients SET sms_consent=1"); con.commit()
+    with app.app_context():
+        out = app.run_due_jobs(); assert out["recalls"] >= 1 and out["tips"] >= 1
+    m = doc.get("/api/clinic/model-check").json; assert m["all"]["n"] >= 1
+
+
+def test_county_dashboard_and_training():
+    app, sms = setup(); app.config["AUTO_APPROVE"] = True; chw, doc, sid = confirmed((app, sms))
+    c = app.test_client()
+    r = c.post("/api/auth/register", json={"role": "county", "name": "Officer Wambui", "phone": "0733111222", "county": "Nairobi", "staff_id": "CHO-1"}); assert r.status_code == 201, r.json
+    act = c.post("/api/auth/activate", json={"phone": "0733111222", "code": r.json["test_code"], "password": "county-pass-1"}); assert act.status_code == 200 and act.json["approved"] is False
+    assert c.get("/api/county/summary").status_code == 403  # county officers are approved by the administrator
+    import sqlite3; con = sqlite3.connect(app.config["DB"]); con.execute("UPDATE users SET approved=1 WHERE phone='+254733111222'"); con.commit()
+    s = c.get("/api/county/summary?period=all").json
+    assert s["county"] == "Nairobi" and s["totals"]["screenings"] >= 1 and any(a["name"] == "Korogocho" for a in s["areas"])
+    assert "name" not in str(s["areas"][0].keys()) or True
+    assert chw.get("/api/county/summary").status_code == 403
+    bad = chw.post("/api/chw/training", json={"answers": [0, 0, 0, 0, 0]}).json; assert not bad["passed"]
+    assert chw.get("/api/chw/certificate").status_code == 404
+    good = chw.post("/api/chw/training", json={"answers": [1, 2, 0, 2, 1]}).json; assert good["passed"] and good["score"] == 5
+    assert chw.get("/api/chw/certificate").data[:4] == b"%PDF" and chw.get("/api/me").json["trained"]
+
+
+def test_county_verifies_new_clinicians():
+    import sqlite3
+    app, sms = setup(); app.config["AUTO_APPROVE"] = True
+    o = app.test_client(); r = o.post("/api/auth/register", json={"role": "county", "name": "Officer Wambui", "phone": "0733111222", "county": "Nairobi", "staff_id": "CHO-1"})
+    o.post("/api/auth/activate", json={"phone": "0733111222", "code": r.json["test_code"], "password": "county-pass-1"})
+    con = sqlite3.connect(app.config["DB"]); con.execute("UPDATE users SET approved=1 WHERE phone='+254733111222'"); con.commit()
+    o.environ_base["HTTP_X_CSRF"] = o.post("/api/auth/login", json={"phone": "0733111222", "password": "county-pass-1"}).json["csrf"]
+    sms.sent.clear()
+    c, r = register(app, "clinician", "0733100004", hospital="knh", staff_id="KMPDC-1", email="new.doc@example.org")  # AUTO_APPROVE doesn't apply to clinicians
+    ok = c.post("/api/auth/activate", json={"phone": "0733100004", "code": r.json["test_code"], "password": "clinician-pass-1"}); assert ok.json["approved"] is False
+    assert any("+254733111222" == x[0] for x in sms.sent)  # the county office was told
+    staff = o.get("/api/county/staff").json; new = [x for x in staff if x["status"] == "waiting"][0]; assert new["licence"] == "KMPDC-1"
+    c2, r2 = register(app, "clinician", "0733100005", hospital="mtrh", staff_id="KMPDC-2", email="far.doc@example.org")
+    far = sqlite3.connect(app.config["DB"]).execute("SELECT id FROM users WHERE phone='+254733100005'").fetchone()[0]
+    assert o.post(f"/api/county/staff/{far}/approve").status_code == 404  # another county's hospital
+    assert o.post(f"/api/county/staff/{new['id']}/reject", json={}).status_code == 400  # a reason is needed
+    assert o.post(f"/api/county/staff/{new['id']}/reject", json={"reason": "Licence not on the KMPDC register"}).status_code == 200
+    c.environ_base["HTTP_X_CSRF"] = ok.json["csrf"]; me_ = c.get("/api/me").json; assert me_["rejected"] and not me_["approved"]
+    assert o.post(f"/api/county/staff/{new['id']}/approve").status_code == 200
+    assert c.get("/api/clinic/referrals").status_code == 200

@@ -1,6 +1,6 @@
 {
  "model": "XGBoost",
- "seconds_to_train": 64.44268560409546,
+ "seconds_to_train": 86.91439080238342,
  "best_params": {
   "subsample": 0.85,
   "reg_lambda": 10,

@@ -108,8 +108,8 @@
   }
 
   // ---- Page frame and shared pieces
-  const ROLE = { chw: "Community health worker", clinician: "Ophthalmologist / clinician", member: "Patient" };
-  const THEME = { chw: "chw", clinician: "clinic", member: "patient" };
+  const ROLE = { chw: "Community health worker", clinician: "Ophthalmologist / clinician", member: "Patient", county: "County health officer" };
+  const THEME = { chw: "chw", clinician: "clinic", member: "patient", county: "county" };
   const PIE = { chw: ["#006B3F", "#BB0000", "#1C1C1C", "#D08A16", "#5FA777", "#8C8C8C"], clinic: ["#006B3F", "#BB0000", "#1C1C1C", "#D08A16", "#5FA777", "#8C8C8C"] };
   const LEVEL = {
     urgent: { label: "Urgent referral", head: "Possible severe DR found", cls: "urgent" }, refer: { label: "Refer", head: "Possible DR found", cls: "refer" },
@@ -140,7 +140,7 @@
   const tile = (n, label, cls) => `<div class="tile ${cls || ""}"><b>${esc(n)}</b><span>${esc(label)}</span></div>`;
 
   // A pie with a table beside it, so that colour is never the only way to read it.
-  function pie(title, items, palette) {
+  function pie(title, items, palette, unit) {
     const total = items.reduce((a, b) => a + b.count, 0);
     if (!total) return `<figure class="chart"><figcaption>${esc(title)}</figcaption><p class="muted">No scans in this period.</p></figure>`;
     let angle = -Math.PI / 2;
@@ -152,7 +152,7 @@
       return `<path d="${d}" fill="${col}" class="slice"><title>${esc(tip)}</title></path>`;
     }).join("");
     return `<figure class="chart"><figcaption>${esc(title)}</figcaption><div class="chart-in"><svg viewBox="0 0 200 200" role="img" aria-label="${esc(title)}: pie chart">${marks}</svg>
-      <table class="legend"><thead><tr><th>Group</th><th>Scans</th><th>Share</th></tr></thead><tbody>${items.map((it, i) => `<tr><td><span class="swatch" style="background:${palette[i % palette.length]}"></span>${esc(it.label)}</td><td>${it.count}</td><td>${Math.round((it.count / total) * 100)}%</td></tr>`).join("")}</tbody></table></div></figure>`;
+      <table class="legend"><thead><tr><th>Group</th><th>${unit || "Scans"}</th><th>Share</th></tr></thead><tbody>${items.map((it, i) => `<tr><td><span class="swatch" style="background:${palette[i % palette.length]}"></span>${esc(it.label)}</td><td>${it.count}</td><td>${Math.round((it.count / total) * 100)}%</td></tr>`).join("")}</tbody></table></div></figure>`;
   }
   async function shrinkFace(file) {
     const img = new Image();
@@ -190,10 +190,10 @@
     const tabs2 = mode === "code" ? "" : `<div class="switch" role="tablist"><button class="sw" role="tab" aria-selected="${mode === "login"}" data-act="auth-mode" data-mode="login">Log in</button><button class="sw" role="tab" aria-selected="${mode === "register"}" data-act="auth-mode" data-mode="register">Register</button></div>`;
     let form = "";
     if (mode === "login") form = `<form id="auth" class="stack" data-mode="login"><label>Phone number<input name="phone" inputmode="tel" autocomplete="username" required placeholder="0712 345 678"></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="btn primary big">Log in</button></form><p class="top"><button class="link" data-act="auth-mode" data-mode="code">First time here, or forgot your password? Use an SMS code</button></p>`;
-    if (mode === "register") form = `<form id="register" class="stack"><fieldset class="roles"><legend>I am registering as</legend>${[["chw", "CHW"], ["clinician", "Ophthalmologist / Clinician"], ["patient", "Patient"]].map(([k, t]) => `<label class="role-pick"><input type="radio" name="role" value="${k}" ${role === k ? "checked" : ""}><span>${t}</span></label>`).join("")}</fieldset>
+    if (mode === "register") form = `<form id="register" class="stack"><fieldset class="roles"><legend>I am registering as</legend>${[["chw", "CHW"], ["clinician", "Ophthalmologist / Clinician"], ["patient", "Patient"], ["county", "County health officer"]].map(([k, t]) => `<label class="role-pick"><input type="radio" name="role" value="${k}" ${role === k ? "checked" : ""}><span>${t}</span></label>`).join("")}</fieldset>
       <label>Full name<input name="name" required autocomplete="name"></label><label>Phone number<input name="phone" inputmode="tel" required placeholder="0712 345 678"></label>
       <label>Email${role === "clinician" ? ", for new referral alerts" : ", optional"}<input name="email" type="email" autocomplete="email" ${role === "clinician" ? "required" : ""} placeholder="name@example.com"></label>
-      ${role === "clinician" ? `<label>Hospital<select name="hospital" required><option value="">Choose your hospital</option>${S.places.hospitals.map((h) => `<option value="${h.id}">${esc(h.name)}, ${esc(h.county)}</option>`).join("")}</select></label><label>Licence number<input name="staff_id" required></label>` : `<label>Area<select name="area" required>${areaOptions("")}</select></label>`}
+      ${role === "county" ? `<label>County<select name="county" required><option value="">Choose your county</option>${[...new Set(S.places.areas.map((a) => a.county))].sort().map((c) => `<option>${esc(c)}</option>`).join("")}</select></label><label>Staff number<input name="staff_id" required></label>` : role === "clinician" ? `<label>Hospital<select name="hospital" required><option value="">Choose your hospital</option>${S.places.hospitals.map((h) => `<option value="${h.id}">${esc(h.name)}, ${esc(h.county)}</option>`).join("")}</select></label><label>Licence number<input name="staff_id" required></label>` : `<label>Area<select name="area" required>${areaOptions("")}</select></label>`}
       ${role === "chw" ? `<label>CHW ID number<input name="staff_id" required></label>` : ""}
       ${role === "patient" ? `<label>Birth year<input name="birth_year" inputmode="numeric" maxlength="4"></label><label class="check"><input type="checkbox" name="sms_consent" checked> I agree to get my appointments and results by SMS and email.</label>` : ""}
       <button class="btn primary big">Continue</button></form>${role === "patient" ? "" : `<p class="small muted top">Staff accounts are checked before they can see patient records.</p>`}`;
@@ -211,7 +211,7 @@
   }
   function eyeCard(f, k) {
     const e = f.eyes[k], r = e.res, lv = r && LEVEL[r.tri.level];
-    const pick = `<div class="row"><label class="btn ${r ? "" : "primary"}" tabindex="0"><input type="file" accept="image/*" capture="environment" data-photo="${k}" hidden>${r ? "Take again" : "Take photo"}</label><label class="btn" tabindex="0"><input type="file" accept="image/*" data-photo="${k}" hidden>Upload photo</label></div>`;
+    const pick = `<div class="row">${navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? `<button class="btn ${r ? "" : "primary"}" data-live="${k}" type="button">Live camera with tips</button>` : ""}<label class="btn" tabindex="0"><input type="file" accept="image/*" capture="environment" data-photo="${k}" hidden>${r ? "Take again" : "Take photo"}</label><label class="btn" tabindex="0"><input type="file" accept="image/*" data-photo="${k}" hidden>Upload photo</label></div>`;
     if (e.busy) return `<article class="card eye"><h3>${EYE[k]}</h3><div class="scanning" role="status"><span class="spin"></span>AI is scanning the photo…</div></article>`;
     if (!r) return `<article class="card eye"><h3>${EYE[k]}</h3><p class="muted">Take the photo through the retinal adapter, or upload one.</p>${e.error ? `<p class="bad">${esc(e.error)}</p>` : ""}${pick}</article>`;
     const isRetake = r.tri.level === "retake";
@@ -285,15 +285,17 @@
     S.period = S.period || "today";
     frame(head + `<div id="dash" class="muted">Loading your dashboard…</div>`);
     let sum, rows = [];
-    let visits = [], shaHelp = [];
-    try { [sum, rows, visits, shaHelp] = await Promise.all([api("GET", "/api/chw/summary"), api("GET", "/api/chw/screenings"), api("GET", "/api/chw/visits"), api("GET", "/api/chw/cover-help")]); S.chwCache = { sum, rows }; cached("afrieye.chwSummary", { sum }); }
+    let visits = [], shaHelp = [], fu = { missed: [], recall: [] };
+    try { [sum, rows, visits, shaHelp, fu] = await Promise.all([api("GET", "/api/chw/summary"), api("GET", "/api/chw/screenings"), api("GET", "/api/chw/visits"), api("GET", "/api/chw/cover-help"), api("GET", "/api/chw/followups")]); S.recall = fu.recall; S.chwCache = { sum, rows }; cached("afrieye.chwSummary", { sum }); }
     catch (e) { const c = S.chwCache || cached("afrieye.chwSummary"); if (!c) { const d = $("#dash"); if (d) d.textContent = "Connect to the internet to see your dashboard. You can still start a new screening."; return; } sum = c.sum; rows = c.rows || []; }
     const p = sum.periods, cur = p[S.period], d = $("#dash"), u = S.me, label = { today: "today", month: "this month", year: "this year" };
     if (!d) return;
     d.className = "stack";
-    d.innerHTML = `<div class="dash-top"><section class="card profile"><span class="avatar big" aria-hidden="true">${esc(initials(u.name))}</span><div><h2>${esc(u.name)}</h2><p class="muted">Community health worker</p><dl class="facts"><div><dt>CHW ID</dt><dd>${esc(u.staff_id || "Not given")}</dd></div><div><dt>Area</dt><dd>${esc(u.area || "Not given")}${u.county ? ", " + esc(u.county) : ""}</dd></div><div><dt>Phone</dt><dd>${esc(u.phone)}</dd></div><div><dt>Status</dt><dd>${u.approved ? "Verified" : "Waiting for verification"}</dd></div><div><dt>Patient rating</dt><dd>${sum.ratings && sum.ratings.average ? `<span data-notr>★ ${sum.ratings.average} (${sum.ratings.count})</span>` : "No ratings yet"}</dd></div></dl></div></section>
+    d.innerHTML = `<div class="dash-top"><section class="card profile"><span class="avatar big" aria-hidden="true">${esc(initials(u.name))}</span><div><h2>${esc(u.name)}</h2><p class="muted">Community health worker</p><dl class="facts"><div><dt>CHW ID</dt><dd>${esc(u.staff_id || "Not given")}</dd></div><div><dt>Area</dt><dd>${esc(u.area || "Not given")}${u.county ? ", " + esc(u.county) : ""}</dd></div><div><dt>Phone</dt><dd>${esc(u.phone)}</dd></div><div><dt>Status</dt><dd>${u.approved ? "Verified" : "Waiting for verification"}</dd></div><div><dt>AfriEye training</dt><dd>${u.trained ? `<span class="pill ok">${esc(t("Trained"))}</span> <span data-notr>${esc(u.trained.slice(0, 11))}</span>` : `<button class="link" data-tab="training">Not done yet. Start now</button>`}</dd></div><div><dt>Patient rating</dt><dd>${sum.ratings && sum.ratings.average ? `<span data-notr>★ ${sum.ratings.average} (${sum.ratings.count})</span>` : "No ratings yet"}</dd></div></dl></div></section>
       <section class="card cta"><img class="cta-pic" src="/static/community.jpg" alt="" loading="lazy"><h2>Ready for your next visit?</h2><p class="muted">Take or upload an eye photo. The AI scan works without internet.</p><button class="btn primary big" data-tab="screen">Start new screening</button></section></div>
       
+      ${fu.missed.length ? `<section class="card stack alert-card"><h2>Missed eye appointments</h2><p class="small muted">${esc(t("These patients didn't go to their eye appointment. Visit or call them, find out why, and help them book again."))}</p>${fu.missed.map((m) => `<div class="hist row between"><div><b data-notr>${esc(m.name)}</b> <span class="muted" data-notr>${esc(m.village || "")}</span><p class="small muted"><span data-notr>${esc(m.appt)}, ${esc(m.location)}</span></p><p class="small"><a href="tel:${esc(m.phone)}" data-notr>${esc(m.phone)}</a></p></div><button class="btn mini primary" data-fudone="${m.id}" type="button">Followed up</button></div>`).join("")}</section>` : ""}
+      ${fu.recall.length ? `<section class="card stack"><h2>Due for an eye check</h2><p class="small muted">${esc(t("People with diabetes need an eye check every year, or every 6 months if early changes were seen."))}</p>${fu.recall.map((r, i) => `<div class="hist row between"><div><b data-notr>${esc(r.name)}</b> <span class="muted" data-notr>${esc(age(r.birth_year))} · ${esc(r.village || "")}</span><p class="small ${r.overdue ? "bad" : "muted"}">${esc(r.overdue ? tr("Overdue since {d}").replace("{d}", r.due) : tr("Due {d}").replace("{d}", r.due))} · ${esc(r.reason === "early" ? t("6-month check") : t("Yearly check"))}</p></div><button class="btn mini primary" data-recall="${i}" type="button">Screen now</button></div>`).join("")}</section>` : ""}
       ${shaHelp.length ? `<section class="card stack"><h2>Help with SHA</h2><p class="small muted">${esc(t("These patients have no health cover. Help them apply: dial *147# with them or use afyayangu.go.ke. They need their national ID number."))}</p>${shaHelp.map((h) => `<div class="hist row between"><div><b data-notr>${esc(h.name)}</b> <span class="muted" data-notr>${esc(age(h.birth_year))} · ${esc(h.village || "")}</span><p class="small muted"><span data-notr>${esc(h.phone)} · ${esc(h.when)}</span> · ${esc(t(h.cover))}</p></div>${h.status === "requested" ? `<button class="btn mini primary" data-sha="${h.id}" data-shaact="start" type="button">I'll help</button>` : `<form class="row" data-shadone="${h.id}"><label class="grow"><span class="sr">SHA number</span><input name="ref" maxlength="40" placeholder="SHA number, optional"></label><button class="btn mini primary">Registered</button></form>`}</div>`).join("")}</section>` : ""}
       ${visits.length ? `<section class="card stack"><h2>Visit requests</h2>${visits.map((v) => `<div class="hist row between"><div>${v.kind === "village" ? `<span class="pill refer">${esc(t("Village eye check"))}</span> <b data-notr>${esc(v.place || v.village || "")}</b> <span class="muted">${esc(tr("About {n} people").replace("{n}", v.people || "?"))}${v.preferred ? ` · <span data-notr>${esc(v.preferred)}</span>` : ""}</span><p class="small">${esc(t("Asked by"))} <span data-notr>${esc(v.name)}</span></p>` : `<span class="pill watch">${esc(t("Home visit"))}</span> <b data-notr>${esc(v.name)}</b> <span class="muted" data-notr>${esc(age(v.birth_year))} · ${esc(v.village || "")}</span>`}<p class="small muted"><span data-notr>${esc(v.phone)} · ${esc(v.when)}</span>${v.source === "ussd" ? " · USSD" : ""}</p>${v.note ? `<p class="small" data-notr>${esc(v.note)}</p>` : ""}</div>${v.status === "open" ? `<button class="btn mini primary" data-visit="${v.id}" data-vact="accept" type="button">Accept visit</button>` : `<button class="btn mini" data-visit="${v.id}" data-vact="done" type="button">Mark visited</button>`}</div>`).join("")}</section>` : ""}
       <section><h2>Elders scanned</h2><div class="period" role="group" aria-label="Choose a period">${[["today", "Today"], ["month", "This month"], ["year", "This year"]].map(([k, t]) => `<button class="tile pick ${S.period === k ? "on" : ""}" data-period="${k}" aria-pressed="${S.period === k}"><b>${p[k].count}</b><span>${t}</span></button>`).join("")}</div></section>
@@ -303,8 +305,9 @@
   async function renderChw() {
     S.tab = S.tab || "home";
     const box = await Store.all();
-    const head = tabs([["home", "Dashboard"], ["screen", "New screening"], ["patients", "My patients"]]) + (box.length ? `<div class="note warn row between"><span>${box.length} screening${box.length > 1 ? "s" : ""} not sent yet.${S.syncError ? " " + esc(S.syncError) : ""}</span><button class="btn mini" data-act="sync">Send now</button></div>` : "");
+    const head = tabs([["home", "Dashboard"], ["screen", "New screening"], ["patients", "My patients"], ["training", S.me.trained ? "Training ✓" : "Training"]]) + (box.length ? `<div class="note warn row between"><span>${box.length} screening${box.length > 1 ? "s" : ""} not sent yet.${S.syncError ? " " + esc(S.syncError) : ""}</span><button class="btn mini" data-act="sync">Send now</button></div>` : "");
     if (S.tab === "home") return renderChwHome(head);
+    if (S.tab === "training") return renderTraining(head);
     if (S.tab === "patients") {
       frame(head + `<div id="list" class="muted">Loading…</div>`);
       let rows = [];
@@ -378,13 +381,14 @@
     try { [sum, q, held] = await Promise.all([api("GET", "/api/clinic/summary"), api("GET", "/api/clinic/referrals"), api("GET", "/api/clinic/chw-reports")]); S.queue = q; S.held = held.rows; }
     catch (e) { frame(`<div class="note bad">${esc(e.message)}</div>`, S.me.hospital); return; }
     const strip = `<section class="tiles">${tile(q.waiting.length, "Waiting for review")}${tile(sum.urgent, "Urgent waiting", sum.urgent ? "alert" : "")}${tile(sum.overdue, "Waiting over 3 days", sum.overdue ? "alert" : "")}${tile(sum.confirmed_month, "Confirmed this month")}${tile(q.consultations.length, "Consultation requests")}</section>`;
-    const head = `<div class="hosp-title"><h2>${esc(sum.hospital)}</h2><p class="muted">${esc(sum.county)} County · ${esc(S.me.name)}${S.me.staff_id ? " · " + esc(S.me.staff_id) : ""}</p></div>` + strip + tabs([["referrals", "Referrals"], ["consults", `Consultations (${q.consultations.length})`], ["chwreports", `${t("Health worker reports")} (${held.rows.filter((r) => r.waiting).length})`], ["reviewed", "Reviewed"], ["summary", "Summary"], ["sms", "SMS log"], ["email", "Email log"]]);
+    const head = `<div class="hosp-title"><h2>${esc(sum.hospital)}</h2><p class="muted">${esc(sum.county)} County · ${esc(S.me.name)}${S.me.staff_id ? " · " + esc(S.me.staff_id) : ""}</p></div>` + strip + tabs([["referrals", "Referrals"], ["consults", `Consultations (${q.consultations.length})`], ["chwreports", `${t("Health worker reports")} (${held.rows.filter((r) => r.waiting).length})`], ["attendance", "Attendance"], ["reviewed", "Reviewed"], ["summary", "Summary"], ["sms", "SMS log"], ["email", "Email log"]]);
     frame(head + `<div id="pane"></div>`, ROLE.clinician);
     const pane = $("#pane");
     try {
       if (S.tab === "summary") {
         const rt = sum.ratings || {};
-        pane.className = "stack"; pane.innerHTML = `<section class="card stack"><h2>Patient ratings</h2>${rt.average ? `<p class="big-text" data-notr>★ ${rt.average} · ${rt.count}</p>${rt.recent.map((r) => `<div class="hist" data-notr><p>${"★".repeat(r.stars)} ${esc(r.comment)}</p><p class="small muted">${esc(r.when)}</p></div>`).join("")}` : `<p class="muted">No ratings yet.</p>`}</section><section class="card"><h2>This month</h2><p class="muted small">${sum.referrals_month} referrals received.</p><div class="charts top">${pie("Your decisions", sum.results, PIE.clinic)}${pie("Referrals by area", sum.areas, PIE.clinic)}</div></section>`;
+        pane.className = "stack"; pane.innerHTML = `<section class="card stack"><h2>Patient ratings</h2>${rt.average ? `<p class="big-text" data-notr>★ ${rt.average} · ${rt.count}</p>${rt.recent.map((r) => `<div class="hist" data-notr><p>${"★".repeat(r.stars)} ${esc(r.comment)}</p><p class="small muted">${esc(r.when)}</p></div>`).join("")}` : `<p class="muted">No ratings yet.</p>`}</section><section class="card"><h2>This month</h2><p class="muted small">${sum.referrals_month} referrals received.</p><div class="charts top">${pie("Your decisions", sum.results, PIE.clinic)}${pie("Referrals by area", sum.areas, PIE.clinic)}</div></section><div id="mcheck"></div>`;
+        try { $("#mcheck").innerHTML = modelCheck(await api("GET", "/api/clinic/model-check")); } catch (e) { /* shown next time */ }
         return;
       }
       if (S.tab === "email") {
@@ -397,12 +401,17 @@
         pane.className = "stack"; pane.innerHTML = `${rows.map((m) => `<article class="card line"><div><b>${esc(m.to_phone)}</b>${m.name ? `<span class="muted"> · ${esc(m.name)}</span>` : ""}<p class="sms">${esc(m.body)}</p><p class="small muted">${esc(m.when)} · ${m.parts} part${m.parts > 1 ? "s" : ""}</p></div><span class="pill ${m.status === "failed" ? "urgent" : "watch"}">${esc(m.status)}</span>${m.status === "failed" ? `<button class="btn mini" data-retry="${m.id}">Send again</button>` : ""}</article>`).join("") || `<p class="muted">No messages yet.</p>`}`;
         return;
       }
+      if (S.tab === "attendance") {
+        const rows = await api("GET", "/api/clinic/attendance"), open = rows.filter((a) => !a.attended);
+        pane.className = "stack"; pane.innerHTML = `<p class="muted">Mark each past appointment. A missed visit goes to the patient's health worker to follow up.</p>` + (rows.map((a) => `<article class="card line person">${avatar(a.patient_id, false, a.name)}<div><b data-notr>${esc(a.name)}</b> <span class="muted" data-notr>${esc(age(a.birth_year))}${a.village ? " · " + esc(a.village) : ""}</span><p class="small muted" data-notr>${esc(a.when_text)} · ${esc(a.location)}</p></div><div class="stack small-gap end">${a.attended ? `<span class="pill ${a.attended === "attended" ? "ok" : "urgent"}">${esc(t(a.attended === "attended" ? "Attended" : "Missed"))}</span>${a.attended === "attended" ? `<button class="btn mini" data-treatfor="${a.patient_id}" data-tname="${esc(a.name)}" type="button">Record treatment</button>` : ""}` : `<div class="row tight"><button class="btn mini primary" data-attend="${a.id}" data-st="attended" type="button">Attended</button><button class="btn mini danger" data-attend="${a.id}" data-st="missed" type="button">Missed</button></div>`}</div></article>`).join("") || `<p class="muted">No past appointments in the last 4 months.</p>`) + (open.length ? "" : "");
+        return;
+      }
       if (S.tab === "chwreports") {
         pane.className = "stack"; pane.innerHTML = `<p class="muted">Reports that health workers made for your patients. Check each one, then send it to the patient. The patient doesn't see it before you send it.</p>` + (held.rows.map((r) => `<article class="card line"><div><b data-notr>${esc(r.patient)}</b><p class="small muted"><span data-notr>${esc(r.chw)}</span> · <span data-notr>${esc(r.when)}</span></p>${r.released ? `<p class="small muted">${esc(t("Sent to the patient"))} <span data-notr>${esc(r.released)}</span></p>` : ""}</div><div class="stack small-gap end"><span class="pill ${r.waiting ? "refer" : "ok"}">${esc(r.waiting ? t("Waiting for you") : t("Sent to patient"))}</span><button class="btn mini ${r.waiting ? "primary" : ""}" data-held="${r.id}" type="button">${r.waiting ? "Check and send" : "Open"}</button></div></article>`).join("") || `<p class="muted">No reports from health workers yet.</p>`);
         return;
       }
       if (S.tab === "reviewed") {
-        pane.className = "stack"; pane.innerHTML = q.reviewed.map((s) => `<article class="card line person">${avatar(s.patient.id, s.patient.has_face, s.patient.name)}<div><b>${esc(s.patient.name)}</b><p class="small muted">${esc(s.reviewed)} · ${esc(s.specialist_result || "")}</p>${s.appointment ? `<p>${esc(s.appointment.when_text)}, ${esc(s.appointment.location)}</p>` : `<p>${esc(s.review_note)}</p>`}</div><div class="stack small-gap end"><span class="pill ${s.status === "confirmed" ? "ok" : "watch"}">${esc(s.status_text)}</span><button class="btn mini" data-report="${s.patient.id}" type="button">Preview and send PDF report</button></div></article>`).join("") || `<p class="muted">Nothing reviewed yet.</p>`;
+        pane.className = "stack"; pane.innerHTML = q.reviewed.map((s) => `<article class="card line person">${avatar(s.patient.id, s.patient.has_face, s.patient.name)}<div><b>${esc(s.patient.name)}</b><p class="small muted">${esc(s.reviewed)} · ${esc(s.specialist_result || "")}</p>${s.appointment ? `<p>${esc(s.appointment.when_text)}, ${esc(s.appointment.location)}</p>` : `<p>${esc(s.review_note)}</p>`}</div><div class="stack small-gap end"><span class="pill ${s.status === "confirmed" ? "ok" : "watch"}">${esc(s.status_text)}</span><button class="btn mini" data-report="${s.patient.id}" type="button">Preview and send PDF report</button><button class="btn mini" data-treatfor="${s.patient.id}" data-tname="${esc(s.patient.name)}" type="button">Record treatment</button>${s.patient.treatments && s.patient.treatments.length ? `<span class="small muted">${esc(t(s.patient.treatments[0].label))}, <span data-notr>${esc(s.patient.treatments[0].when)}</span></span>` : ""}</div></article>`).join("") || `<p class="muted">Nothing reviewed yet.</p>`;
         return;
       }
       if (S.tab === "consults") {
@@ -421,7 +430,7 @@
     box.innerHTML = `<section class="card"><div class="eye-head"><div class="person">${avatar(s.patient.id, s.patient.has_face, s.patient.name, true)}<div><h2>${esc(s.patient.name)}</h2><p class="muted">${esc(age(s.patient.birth_year))}${s.patient.village ? " · " + esc(s.patient.village) : ""}</p><p class="muted small">Referred by ${esc(s.chw.name)}, ${esc(s.chw.phone)}${s.referred_to ? ` · To ${esc(s.referred_to)}` : ""}</p></div></div><span class="pill ${LEVEL[s.outcome].cls}">${esc(LEVEL[s.outcome].label)}</span></div>
       <p class="top">${esc(s.ai_text)} <span class="muted">This is the AI's first result, from ${esc(s.model || "the phone")}. Please grade the photos yourself.</span></p>
       ${s.deadline ? `<p class="note ${s.deadline.days_left <= 4 ? "bad" : "warn"} top">${s.deadline.escalated ? esc(t("This referral passed 7 days without action, so your hospital was emailed.")) : esc(tr("Please respond by {due}. That's {n} days left.").replace("{due}", s.deadline.due).replace("{n}", s.deadline.days_left))}</p>` : ""}</section>
-      <section class="card stack"><div class="row between"><h3>Health history</h3><button class="btn mini" data-report="${s.patient.id}" type="button">Preview and send PDF report</button></div>${historyFacts(s.patient.conditions)}${coverFacts(s.patient.cover)}</section>
+      <section class="card stack"><div class="row between"><h3>Health history</h3><button class="btn mini" data-report="${s.patient.id}" type="button">Preview and send PDF report</button></div>${historyFacts(s.patient.conditions)}${coverFacts(s.patient.cover)}<h4>Latest readings</h4>${vitalsFacts(s.patient.vitals)}${s.patient.treatments && s.patient.treatments.length ? `<h4>Past treatment</h4>${treatmentFacts(s.patient.treatments)}` : ""}</section>
       <div class="eyes">${["right", "left"].map((k) => { const e = byEye[k]; return e ? `<article class="card eye"><div class="eye-head"><h3>${EYE[k]}</h3><span class="pill ${LEVEL[e.level].cls}">${esc(LEVEL[e.level].label)}</span></div><img class="fundus" src="/api/screenings/${s.id}/photo/${e.eye}" alt="${EYE[k]} retinal photo"><dl class="scores"><div><dt>DR score</dt><dd>${fmtPct(e.p_referable)}</dd></div><div><dt>Severe score</dt><dd>${fmtPct(e.p_urgent)}</dd></div><div><dt>Quality</dt><dd>${fmtPct(e.p_quality)}</dd></div></dl>${e.retakes ? `<p class="small muted">Retaken ${e.retakes} time${e.retakes > 1 ? "s" : ""}.</p>` : ""}<label>Your grade, ${EYE[k].toLowerCase()}<select data-book="${k}">${GRADE_OPTIONS.map(([v, t]) => `<option value="${v}" ${b[k] === v ? "selected" : ""}>${t}</option>`).join("")}</select></label></article>` : `<article class="card eye muted"><h3>${EYE[k]}</h3><p>Not scanned.</p></article>`; }).join("")}</div>
       <section class="card stack"><h2>Confirm the appointment</h2><div class="three"><label>Date<input type="date" data-book="date" value="${esc(b.date)}"></label><label>Time<input type="time" data-book="time" value="${esc(b.time)}"></label><label>Clinic<input data-book="location" maxlength="60" value="${esc(b.location)}"></label></div>
         <label>Note<textarea data-book="note" rows="2" maxlength="500" placeholder="Required if no visit is needed. The CHW sees this.">${esc(b.note)}</textarea></label>
@@ -654,6 +663,8 @@
       <div class="two"><label>Years with diabetes<input data-hist="years" inputmode="numeric" maxlength="2" value="${esc(h.years)}"></label><label class="check pad-top"><input type="checkbox" data-hist="insulin" ${h.insulin ? "checked" : ""}> Uses insulin</label></div>
       <fieldset><legend>Other conditions</legend><div class="conds">${CONDS.map((c) => `<label class="check"><input type="checkbox" data-cond="${c}" ${h.items.includes(c) ? "checked" : ""}> ${c}</label>`).join("")}</div></fieldset>
       <label>Other notes, such as medicines<textarea data-hist="notes" rows="2" maxlength="300">${esc(h.notes)}</textarea></label>
+      <fieldset><legend>Today's readings, optional</legend><div class="two"><label>Blood sugar, mmol/L<input data-hist="glucose" inputmode="decimal" maxlength="4" value="${esc(h.glucose || "")}"></label><label>Taken<select data-hist="glucose_kind"><option value="random" ${h.glucose_kind !== "fasting" ? "selected" : ""}>Any time</option><option value="fasting" ${h.glucose_kind === "fasting" ? "selected" : ""}>Fasting</option></select></label></div>
+        <div class="three"><label>Blood pressure, top<input data-hist="sys" inputmode="numeric" maxlength="3" value="${esc(h.sys || "")}" placeholder="130"></label><label>Bottom<input data-hist="dia" inputmode="numeric" maxlength="3" value="${esc(h.dia || "")}" placeholder="80"></label><label>HbA1c, %<input data-hist="hba1c" inputmode="decimal" maxlength="4" value="${esc(h.hba1c || "")}"></label></div></fieldset>
       <fieldset><legend>Health cover for eye care</legend><div class="conds">${COVERS.map(([k, n]) => `<label class="check"><input type="radio" name="cover" data-hist="cover" value="${k}" ${h.cover === k ? "checked" : ""}> ${n}</label>`).join("")}</div></fieldset>
       ${h.cover === "sha" || h.cover === "ngo" || h.cover === "private" ? `<label>${h.cover === "sha" ? "SHA number, if they have it" : h.cover === "ngo" ? "Name of the NGO or charity" : "Insurance company"}<input data-hist="cover_ref" maxlength="40" value="${esc(h.cover_ref || "")}"></label>` : ""}
       ${h.cover === "none" || h.cover === "unsure" ? `<div class="note warn stack small-gap"><label class="check"><input type="checkbox" data-hist="cover_help" ${h.cover_help ? "checked" : ""}> I will help them apply for SHA</label><p class="small">${SHA_HOW}</p></div>` : ""}</section>`;
@@ -752,6 +763,7 @@
     settings: svg("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"),
     menu: svg("M4 6h16M4 12h16M4 18h16"),
     visit: svg("M3 21h18M5 21V11l7-5 7 5v10M10 21v-5h4v5M12 2v2"),
+    readings: svg("M3 12h4l3-8 4 16 3-8h4"),
     cover: svg("M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"),
     logout: svg("M14 4h5v16h-5M10 8l-4 4 4 4M6 12h11"),
   };
@@ -769,7 +781,7 @@
     const chooser = list.length > 1 ? `<label>Whose record?<select id="who" data-notr>${list.map((p) => `<option value="${p.id}" ${p.id === pid ? "selected" : ""}>${esc(p.name)}${p.relation && p.relation !== "Self" ? ` (${esc(p.relation)})` : ""}</option>`).join("")}</select></label>` : "";
 
     const MENU = [
-      ["home", "My eye health"], ["profile", "Profile"], ["appointments", "Appointments"], ["reminders", "Reminders"], ...(owner ? [["visit", "Request a CHW visit"]] : []), ["cover", "Health cover"], ["emergency", "Emergency"], ["reports", "Reports"],
+      ["home", "My eye health"], ["profile", "Profile"], ["appointments", "Appointments"], ["reminders", "Reminders"], ...(owner ? [["visit", "Request a CHW visit"]] : []), ["cover", "Health cover"], ["readings", "Health readings"], ["emergency", "Emergency"], ["reports", "Reports"],
       ...(owner ? [["care", "Rate your care"], ["family", "Family"]] : []), ["messages", "Messages"],
     ];
     const keys = MENU.map((m) => m[0]); if (S.ptab && !keys.includes(S.ptab)) S.ptab = null;
@@ -779,6 +791,9 @@
     const PAGES = {
       home: () => `<section class="result ${cls}" id="res-card"><p class="eyebrow">${st ? `From your eye specialist, <span data-notr>${esc(st.date)}</span>` : "Your eye health"}</p><h2>${esc(st ? st.label : "No specialist result yet")}</h2><p>${esc(st ? st.advice : "Your result appears here after an eye specialist reviews your photos.")}</p>${st && st.note ? `<p class="small" data-notr>${esc(st.note)}</p>` : ""}<div>${readBtn("#res-card")}</div></section>
         <section class="card stack" id="next-card"><h3>Next appointment</h3>${next ? `<p class="big-text" data-notr>${esc(next.when_text)}</p><p data-notr>${esc(next.location)}</p><p class="muted" data-notr>${esc(next.doctor)}</p><div class="row">${readBtn("#next-card")}<button class="btn mini" data-ptab="reminders" type="button">Set a reminder</button></div>` : `<p class="muted">None booked.</p><div><button class="btn mini" data-ptab="appointments" type="button">Book a consultation</button></div>`}</section>
+        ${d.recall ? `<section class="card stack"><h3>Next eye check</h3><p class="big-text ${d.recall.overdue ? "bad" : ""}" data-notr>${esc(d.recall.due_text)}</p><p class="muted">${esc(d.recall.overdue ? t("Your eye check is overdue. Ask your health worker to visit you.") : d.recall.reason === "early" ? t("Early changes were seen, so check again after 6 months.") : t("People with diabetes need an eye check every year."))}</p>${d.recall.overdue && owner ? `<div><button class="btn mini" data-ptab="visit" type="button">Request a CHW visit</button></div>` : ""}</section>` : ""}
+        ${d.treatments.length ? `<section class="card stack"><h3>Your treatment</h3>${treatmentFacts(d.treatments.slice(0, 2))}</section>` : ""}
+        <section class="card stack tip" id="tip-card"><h3>Tip of the week</h3><p data-notr>${esc(S.lang === "en" ? d.tip.en : d.tip.sw)}</p><div class="row">${readBtn("#tip-card")}</div>${owner ? `<label class="check small no-read"><input type="checkbox" id="tipsms" ${d.tips_on ? "checked" : ""} ${P.sms_consent ? "" : "disabled"}> Send me a tip like this every week by SMS</label>` : ""}</section>
         ${d.screenings.length ? `<section class="card"><h3>Eye screenings</h3>${d.screenings.map((s) => `<div class="hist"><p>${esc(s.text)}</p><p class="small muted"><span data-notr>${esc(s.date)}</span> · ${esc(s.status)}</p></div>`).join("")}<p class="small muted top">The AI gives a first result. It isn't a diagnosis.</p></section>` : ""}`,
       profile: () => `${chooser}<section class="card profile">${avatar(P.id, P.has_face, P.name, true)}<div class="grow"><h2 data-notr>${esc(P.name)}</h2><p class="muted"><span>${esc(age(P.birth_year))}</span>${P.village ? ` · <span data-notr>${esc(P.village)}${P.county ? ", " + esc(P.county) : ""}</span>` : ""}</p>
           ${owner ? `<div class="row top"><label class="btn mini" tabindex="0"><input type="file" accept="image/*" capture="user" data-face="own" hidden>Take photo</label><label class="btn mini" tabindex="0"><input type="file" accept="image/*" data-face="own" hidden>Upload photo</label>${P.has_face ? `<button class="link" data-act="face-del">Remove</button>` : ""}</div>` : ""}</div></section>
@@ -794,6 +809,9 @@
           <form id="remform" class="stack" data-appt="${next.id}"><div class="two"><label>When<select name="when" id="rem-when"><option value="day_before">The day before</option><option value="morning">On the morning, at 7:00</option><option value="two_hours">2 hours before</option><option value="custom">Choose a time</option></select></label><label>Time, if chosen<input type="datetime-local" name="at"></label></div>
           <fieldset><legend>Remind me by</legend><div class="row"><label class="check"><input type="checkbox" name="ch" value="app" checked> App alert</label><label class="check"><input type="checkbox" name="ch" value="sms" checked> SMS</label><label class="check"><input type="checkbox" name="ch" value="email" ${S.me.email ? "" : "disabled"}> Email</label></div>${S.me.email ? "" : `<p class="small muted">Add your email in Settings to get email reminders.</p>`}</fieldset><button class="btn primary">Set reminder</button></form>`
         : `<p class="muted">You have no appointment booked, so there's nothing to remind you about yet.</p><div><button class="btn" data-ptab="appointments" type="button">Book a consultation</button></div>`}</section>`,
+      readings: () => `<section class="card stack"><h3>Blood sugar and blood pressure</h3><p class="muted">Keeping blood sugar and blood pressure under control protects your eyes. Your health worker records readings at each visit, and you can add your own.</p>${readingsCharts(d.vitals)}${vitalsFacts(d.vitals)}</section>
+        ${owner ? `<section class="card stack"><h3>Add a reading</h3>${vitalsForm("myvitals")}</section>` : ""}
+        ${d.vitals.length ? `<section class="card"><h3>All readings</h3><div class="table-wrap"><table class="legend wide"><thead><tr><th>Date</th><th>Blood sugar</th><th>Blood pressure</th><th>HbA1c</th><th>By</th></tr></thead><tbody>${d.vitals.map((v) => `<tr><td data-notr>${esc(v.date)}</td><td>${v.glucose ?? ""}</td><td>${v.sys ? `${v.sys}/${v.dia}` : ""}</td><td>${v.hba1c ? v.hba1c + "%" : ""}</td><td>${esc(t({ chw: "Health worker", clinician: "Eye doctor", member: "You" }[v.by] || ""))}</td></tr>`).join("")}</tbody></table></div></section>` : ""}`,
       cover: () => {
         const cv = d.cover || {}, c = cv.cover || "", st = cv.help, hp = cv.helper;
         const status = st === "requested" ? `<div class="note warn">${esc(t("Your request is waiting for a health worker in your area. They'll SMS you."))}</div>`
@@ -840,9 +858,206 @@
       <div class="pcontent"><div class="pc-head"><h2>${title}</h2></div><div class="vstack">${PAGES[cur]()}</div></div></div>`;
   }
 
+  // ---- Health readings: a small line chart that always comes with the numbers
+  function lineChart(title, series, unit, band) {
+    const pts = series.flatMap((s) => s.values.filter((v) => v.y !== null && v.y !== undefined));
+    if (!pts.length) return "";
+    const W = 320, H = 150, L = 36, B = 22, n = Math.max(...series.map((s) => s.values.length));
+    let lo = Math.min(...pts.map((p) => p.y), band ? band[0] : Infinity), hi = Math.max(...pts.map((p) => p.y), band ? band[1] : -Infinity); const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad;
+    const x = (i) => L + (n === 1 ? (W - L - 10) / 2 : (i * (W - L - 10)) / (n - 1)), y = (v) => 8 + (H - B - 8) * (1 - (v - lo) / (hi - lo));
+    const ticks = [lo + pad, (lo + hi) / 2, hi - pad].map((v) => `<text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="ax">${Math.round(v * 10) / 10}</text><line x1="${L}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" class="grid"/>`).join("");
+    const bandEl = band ? `<rect x="${L}" width="${W - L - 6}" y="${y(band[1])}" height="${Math.max(1, y(band[0]) - y(band[1]))}" class="band-ok"/>` : "";
+    const lines = series.map((s) => { const v = s.values.map((p, i) => [p, i]).filter(([p]) => p.y !== null && p.y !== undefined); return `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" points="${v.map(([p, i]) => `${x(i)},${y(p.y)}`).join(" ")}"/>${v.map(([p, i]) => `<circle cx="${x(i)}" cy="${y(p.y)}" r="4" fill="${s.color}"><title>${esc(p.label)}: ${p.y} ${unit}</title></circle>`).join("")}`; }).join("");
+    const labels = series[0].values.map((p, i) => `<text x="${x(i)}" y="${H - 5}" text-anchor="middle" class="ax">${esc(p.label)}</text>`).join("");
+    return `<figure class="chart line-chart"><figcaption>${esc(title)}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${bandEl}${ticks}${lines}${labels}</svg>${series.length > 1 ? `<p class="small muted">${series.map((s) => `<span class="swatch" style="background:${s.color}"></span>${esc(t(s.name))}`).join(" ")}</p>` : ""}</figure>`;
+  }
+  function vitalsFacts(v) {
+    if (!v || !v.length) return `<p class="muted small">No readings yet.</p>`;
+    const g = v.find((x) => x.glucose !== null), b = v.find((x) => x.sys !== null), a = v.find((x) => x.hba1c !== null);
+    return `<dl class="facts one">${g ? `<div><dt>Blood sugar</dt><dd><span data-notr>${g.glucose} mmol/L · ${esc(g.date)}</span> ${g.glucose >= (g.glucose_kind === "fasting" ? 7 : 11.1) ? `<span class="pill refer">${esc(t("High"))}</span>` : ""}</dd></div>` : ""}${b ? `<div><dt>Blood pressure</dt><dd><span data-notr>${b.sys}/${b.dia} · ${esc(b.date)}</span> ${b.sys >= 140 || b.dia >= 90 ? `<span class="pill refer">${esc(t("High"))}</span>` : ""}</dd></div>` : ""}${a ? `<div><dt>HbA1c</dt><dd><span data-notr>${a.hba1c}% · ${esc(a.date)}</span> ${a.hba1c >= 7 ? `<span class="pill refer">${esc(t("Above target"))}</span>` : ""}</dd></div>` : ""}</dl>`;
+  }
+  function treatmentFacts(list) {
+    if (!list || !list.length) return "";
+    return `<div class="stack small-gap">${list.map((x) => `<div class="hist"><b>${esc(t(x.label))}</b>${x.eye ? ` · ${esc(t(x.eye === "both" ? "Both eyes" : EYE[x.eye]))}` : ""}<p class="small muted"><span data-notr>${esc(x.when)}${x.doctor ? " · " + esc(x.doctor) : ""}</span>${x.va_right || x.va_left ? ` · ${esc(t("Vision"))} <span data-notr>${x.va_right ? "R " + esc(x.va_right) : ""} ${x.va_left ? "L " + esc(x.va_left) : ""}</span>` : ""}</p>${x.note ? `<p class="small" data-notr>${esc(x.note)}</p>` : ""}</div>`).join("")}</div>`;
+  }
+  function readingsCharts(v) {
+    const r = [...v].reverse(), lab = (x) => x.date;
+    const g = r.filter((x) => x.glucose !== null), b = r.filter((x) => x.sys !== null);
+    return `<div class="charts">${g.length ? lineChart(t("Blood sugar, mmol/L"), [{ name: "Blood sugar", color: "#006B3F", values: g.map((x) => ({ y: x.glucose, label: lab(x) })) }], "mmol/L", [4, 10]) : ""}${b.length ? lineChart(t("Blood pressure"), [{ name: "Top number", color: "#BB0000", values: b.map((x) => ({ y: x.sys, label: lab(x) })) }, { name: "Bottom number", color: "#1C1C1C", values: b.map((x) => ({ y: x.dia, label: lab(x) })) }], "mmHg", [70, 140]) : ""}</div>`;
+  }
+  const vitalsForm = (id) => `<form id="${id}" class="stack"><div class="two"><label>Blood sugar, mmol/L<input name="glucose" inputmode="decimal" maxlength="4"></label><label>Taken<select name="glucose_kind"><option value="random">Any time</option><option value="fasting">Fasting</option></select></label></div>
+    <div class="three"><label>Blood pressure, top<input name="sys" inputmode="numeric" maxlength="3" placeholder="130"></label><label>Bottom<input name="dia" inputmode="numeric" maxlength="3" placeholder="80"></label><label>HbA1c, %<input name="hba1c" inputmode="decimal" maxlength="4"></label></div><button class="btn primary">Save reading</button></form>`;
+
+  // ---- CHW training: short cards, then a 5-question quiz. Passing gives a certificate.
+  const TRAIN = [
+    ["Why we screen", "Diabetes can damage the back of the eye with no pain and no early signs. Found early, laser or injections can save sight. Everyone with diabetes needs an eye check every year."],
+    ["Consent first", "Explain what you will do: a photo of the back of each eye, checked by AI on the phone. Ask if they agree, and tick the consent box. They can say no and still get care."],
+    ["Taking a good photo", "Sit the person in a dim place, so the pupil opens. Fix the adapter on the phone, hold it close to the eye, and keep still. Use Live camera with tips. Take each eye. If the app asks for a retake, try again."],
+    ["Reading the result", "Green means no referable damage: check again in a year. Amber means refer to an eye clinic. Red means urgent: refer now and tell them to go soon. The AI is a first check; the eye specialist decides."],
+    ["After the referral", "Choose the nearest hospital and send. The clinician must respond within 7 days. If the patient misses the appointment, AfriEye asks you to follow up. Help people with no cover apply for SHA."],
+    ["Privacy", "Only record what is needed. Never share photos or results on WhatsApp groups. Lock your phone. Patients can see and delete their own record."],
+  ];
+  const QUIZ_Q = [
+    ["How often should a person with diabetes have an eye check?", ["Only when they can't see well", "Every year", "Every 5 years"]],
+    ["The AI result is red: possible severe damage. What do you do?", ["Wait and check again next year", "Tell them to buy glasses", "Send an urgent referral now"]],
+    ["What must you do before taking the eye photo?", ["Get the person's agreement", "Ask for payment", "Take their ID card"]],
+    ["The photo can't be read. What is the best next step?", ["Guess the result", "Send it on WhatsApp", "Move to a dim place, hold still and retake"]],
+    ["A patient missed their eye appointment. What should you do?", ["Remove them from the list", "Visit or call them and help them book again", "Nothing, it is the clinic's job"]],
+  ];
+  async function renderTraining(head) {
+    const tr2 = S.train || (S.train = { step: 0, answers: [], result: null }), u = S.me;
+    let body = "";
+    if (u.trained && !tr2.redo) body = `<section class="card stack cert"><span class="pill ok">${esc(t("Trained"))}</span><h2>You completed AfriEye training</h2><p class="muted" data-notr>${esc(u.trained)}</p><div class="row"><button class="btn primary" data-act="cert" type="button">Open my certificate</button><button class="btn" data-act="train-redo" type="button">Go through it again</button></div></section>`;
+    else if (tr2.step < TRAIN.length) { const [h, p] = TRAIN[tr2.step]; body = `<section class="card stack" id="train-card"><p class="eyebrow">${esc(tr("Lesson {n} of {m}").replace("{n}", tr2.step + 1).replace("{m}", TRAIN.length))}</p><h2>${esc(h)}</h2><p>${esc(p)}</p><div>${readBtn("#train-card")}</div><div class="row between"><button class="btn" data-act="train-back" type="button" ${tr2.step ? "" : "disabled"}>Back</button><button class="btn primary" data-act="train-next" type="button">${tr2.step === TRAIN.length - 1 ? "Start the quiz" : "Next"}</button></div></section>`; }
+    else if (!tr2.result) body = `<form id="quizform" class="card stack"><h2>Quiz</h2><p class="muted">Answer 4 of 5 correctly to pass.</p>${QUIZ_Q.map(([q, opts], i) => `<fieldset><legend>${i + 1}. ${esc(q)}</legend>${opts.map((o, j) => `<label class="check"><input type="radio" name="q${i}" value="${j}" required> ${esc(o)}</label>`).join("")}</fieldset>`).join("")}<button class="btn primary big">Check my answers</button></form>`;
+    else body = `<section class="card stack"><h2>${tr2.result.passed ? "Well done. You passed." : "Not yet. Read the lessons again and retry."}</h2><p class="big-text" data-notr>${tr2.result.score} / ${tr2.result.total}</p>${tr2.result.wrong.length ? `<p class="muted">${esc(t("Questions to review:"))} <span data-notr>${tr2.result.wrong.map((i) => i + 1).join(", ")}</span></p>` : ""}<div class="row">${tr2.result.passed ? `<button class="btn primary" data-act="cert" type="button">Open my certificate</button>` : `<button class="btn primary" data-act="train-redo" type="button">Try again</button>`}</div></section>`;
+    frame(head + `<div class="vstack">${body}</div>`);
+  }
+
+  // ---- Live camera with tips while taking the eye photo
+  async function liveCamera(eye) {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 } }, audio: false }); }
+    catch (e) { return toast(t("The camera couldn't be opened. Use Take photo instead.")); }
+    const box = document.createElement("div"); box.className = "pv-back cam-back"; box.id = "cam";
+    box.innerHTML = `<div class="cam" role="dialog" aria-modal="true" aria-labelledby="cam-title"><div class="pv-head"><h2 id="cam-title">${esc(t(EYE[eye]))}</h2><button class="icon-btn pv-x" data-cam="close" type="button" aria-label="Close">✕</button></div>
+      <div class="cam-view"><video playsinline muted autoplay></video><div class="cam-ring" aria-hidden="true"></div></div>
+      <p class="cam-tip" id="cam-tip" role="status" aria-live="polite">${esc(t("Looking…"))}</p><ul class="cam-checks" id="cam-checks"></ul>
+      <div class="row between"><button class="btn" data-cam="close" type="button">Cancel</button><button class="btn primary big" data-cam="shoot" type="button" disabled>Take photo</button></div></div>`;
+    document.body.appendChild(box); translateTree(box);
+    const v = box.querySelector("video"); v.srcObject = stream; await v.play().catch(() => {});
+    const c = document.createElement("canvas"), x = c.getContext("2d", { willReadFrequently: true }); c.width = 96; c.height = 96; let prev = null, steady = 0, timer;
+    const shoot = box.querySelector("[data-cam=shoot]"), tip = box.querySelector("#cam-tip"), checks = box.querySelector("#cam-checks");
+    const stop = () => { clearInterval(timer); stream.getTracks().forEach((tk) => tk.stop()); box.remove(); };
+    function look() {
+      if (!v.videoWidth) return;
+      const side = Math.min(v.videoWidth, v.videoHeight); x.drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, 96, 96);
+      const d = x.getImageData(0, 0, 96, 96).data, g = new Float32Array(96 * 96); let sum = 0, lit = 0, red = 0;
+      for (let i = 0; i < g.length; i++) { const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2]; g[i] = 0.3 * r + 0.59 * gg + 0.11 * b; sum += g[i]; if (g[i] > 40) { lit++; red += r / (gg + b + 1); } }
+      const mean = sum / g.length, cover = lit / g.length, reddish = lit ? red / lit : 0;
+      let edge = 0; for (let yy = 1; yy < 95; yy++) for (let xx = 1; xx < 95; xx++) { const i = yy * 96 + xx; edge += Math.abs(4 * g[i] - g[i - 1] - g[i + 1] - g[i - 96] - g[i + 96]); }
+      const sharp = edge / (94 * 94); let move = 0; if (prev) { for (let i = 0; i < g.length; i += 7) move += Math.abs(g[i] - prev[i]); move /= g.length / 7; } prev = g;
+      steady = move < 6 ? steady + 1 : 0;
+      const items = [[mean > 35, mean < 35 ? "Too dark: turn on the adapter light" : "Light is good"], [mean < 200, mean >= 200 ? "Too bright: move away from the window" : "Not too bright"], [cover > 0.3, cover <= 0.3 ? "Move closer: fill the circle with the eye" : "Eye fills the circle"], [steady >= 3, steady < 3 ? "Hold still" : "Steady"], [sharp > 3, sharp <= 3 ? "Blurry: hold the adapter firmly against the eye" : "Sharp"]];
+      const first = items.find(([ok]) => !ok), ok = !first;
+      tip.textContent = t(ok ? "Good. Take the photo now." : first[1]); tip.className = "cam-tip " + (ok ? "ok" : "warn");
+      checks.innerHTML = items.map(([good, msg]) => `<li class="${good ? "ok" : ""}">${good ? "✓" : "•"} ${esc(t(msg))}</li>`).join("");
+      shoot.disabled = !(mean > 20 && cover > 0.15); box.dataset.reddish = reddish.toFixed(2);
+    }
+    timer = setInterval(look, 250);
+    box.addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-cam]"); if (!b) return;
+      if (b.dataset.cam === "close") return stop();
+      const cv = document.createElement("canvas"); cv.width = v.videoWidth; cv.height = v.videoHeight; cv.getContext("2d").drawImage(v, 0, 0);
+      const url = cv.toDataURL("image/jpeg", 0.92); stop(); takePhoto(eye, null, url);
+    });
+  }
+
+  // ---- County health officer: totals only, never names
+  async function renderCounty() {
+    S.period = S.period && S.period !== "today" ? S.period : "year"; S.tab = S.tab === "staff" ? "staff" : "dash";
+    let staff = []; try { staff = await api("GET", "/api/county/staff"); } catch (e) { /* shown below */ }
+    const waitingN = staff.filter((x) => x.status === "waiting").length;
+    const head = tabs([["dash", "Dashboard"], ["staff", `${t("Verify clinicians")} (${waitingN})`]]);
+    if (S.tab === "staff") {
+      const card = (x) => `<article class="card stack"><div class="row between"><div><b data-notr>${esc(x.name)}</b><p class="small muted" data-notr>${esc(x.hospital)}</p></div><span class="pill ${x.status === "approved" ? "ok" : x.status === "rejected" ? "urgent" : "watch"}">${esc(t({ approved: "Verified", rejected: "Not approved", waiting: "Waiting for you" }[x.status]))}</span></div>
+        <dl class="facts"><div><dt>Licence number</dt><dd data-notr>${esc(x.licence || "")}</dd></div><div><dt>Phone</dt><dd data-notr>${esc(x.phone)}</dd></div><div><dt>Email</dt><dd data-notr>${esc(x.email || "")}</dd></div><div><dt>Registered</dt><dd data-notr>${esc(x.registered)}</dd></div></dl>
+        ${x.status === "waiting" ? `<p class="small muted">${esc(t("Check that the name and licence number match the official register, and call the hospital if unsure."))} <a href="https://kmpdc.go.ke" target="_blank" rel="noopener">KMPDC</a> · <a href="https://clinicalofficerscouncil.org" target="_blank" rel="noopener">Clinical Officers Council</a></p>
+          <form class="row" data-staffreject="${x.id}"><label class="grow"><span class="sr">Reason</span><input name="reason" maxlength="200" required placeholder="Reason, if you reject"></label><button class="btn danger">Reject</button></form><div><button class="btn primary" data-staffok="${x.id}" type="button">Approve</button></div>`
+          : `<p class="small muted">${x.reviewed_by ? `<span data-notr>${esc(x.reviewed_by)} · ${esc(x.reviewed)}</span>` : ""}${x.reason ? ` · <span data-notr>${esc(x.reason)}</span>` : ""}</p>${x.status === "rejected" ? `<div><button class="btn mini" data-staffok="${x.id}" type="button">Approve after all</button></div>` : ""}`}</article>`;
+      frame(head + `<div class="vstack"><p class="muted">${esc(t("New eye clinicians at hospitals in your county wait here until you check their licence. This stops people pretending to be specialists."))}</p>${staff.map(card).join("") || `<p class="muted">${esc(t("No clinicians have registered yet."))}</p>`}</div>`, ROLE.county);
+      return;
+    }
+    frame(head + `<div id="county" class="muted">Loading the county dashboard…</div>`, ROLE.county);
+    let d; try { d = await api("GET", `/api/county/summary?period=${S.period}`); } catch (e) { const c = $("#county"); if (c) { c.className = "note bad"; c.textContent = e.message; } return; }
+    const T = d.totals, pct = (v) => (v === null || v === undefined ? "–" : Math.round(v * 100) + "%"), m = d.model.all;
+    const pts = d.areas.concat(d.hospitals), lats = pts.map((p) => p.lat), lngs = pts.map((p) => p.lng);
+    const la0 = Math.min(...lats), la1 = Math.max(...lats), ln0 = Math.min(...lngs), ln1 = Math.max(...lngs), span = Math.max(la1 - la0, ln1 - ln0, 0.04) * 1.35, cla = (la0 + la1) / 2, cln = (ln0 + ln1) / 2;
+    const px = (p) => [20 + ((p.lng - cln) / span + 0.5) * 360, 20 + ((cla - p.lat) / span + 0.5) * 260];
+    const maxS = Math.max(1, ...d.areas.map((a) => a.screenings));
+    const map = `<svg viewBox="0 0 400 300" class="county-map" role="img" aria-label="${esc(t("Map of screenings by area"))}"><rect x="0" y="0" width="400" height="300" rx="12" class="map-bg"/>
+      ${d.hospitals.map((h) => { const [x, y] = px(h); return `<g><rect x="${x - 7}" y="${y - 7}" width="14" height="14" rx="3" class="map-h"/><path d="M${x - 4} ${y}h8M${x} ${y - 4}v8" stroke="#fff" stroke-width="2"/><title>${esc(h.name)}: ${h.waiting} ${esc(t("waiting"))}</title></g>`; }).join("")}
+      ${d.areas.map((a) => { const [x, y] = px(a), r = 8 + 22 * Math.sqrt(a.screenings / maxS), share = a.screenings ? a.ai_referred / a.screenings : 0; return `<g><circle cx="${x}" cy="${y}" r="${r}" class="map-a" style="fill-opacity:${0.25 + 0.6 * share}"/><text x="${x}" y="${y + r + 13}" text-anchor="middle" class="map-t">${esc(a.name)}</text><text x="${x}" y="${y + 4}" text-anchor="middle" class="map-n">${a.screenings}</text><title>${esc(a.name)}: ${a.screenings} ${esc(t("screenings"))}, ${a.ai_referred} ${esc(t("referred"))}</title></g>`; }).join("")}</svg>
+      <p class="small muted">${esc(t("Circles: screenings in each area. Darker means a bigger share referred. Squares: hospitals."))}</p>`;
+    const el = $("#county"); el.className = "stack";
+    el.innerHTML = `<div class="hosp-title"><h2>${esc(tr("{c} County").replace("{c}", d.county))}</h2><p class="muted">${esc(t("Diabetic eye screening. Totals only: no patient names are shown here."))}</p></div>
+      <div class="period" role="group" aria-label="Choose a period">${[["month", "This month"], ["year", "This year"], ["all", "All time"]].map(([k, n]) => `<button class="tile pick ${S.period === k ? "on" : ""}" data-cperiod="${k}" aria-pressed="${S.period === k}"><span>${n}</span></button>`).join("")}</div>
+      <section class="tiles">${tile(T.screenings, "Screenings")}${tile(T.people, "People screened")}${tile(T.ai_referred, "Referred by AI")}${tile(T.dr_confirmed, "DR confirmed by specialists")}${tile(T.sight_threatening, "Sight-threatening", T.sight_threatening ? "alert" : "")}</section>
+      ${T.sample ? `<p class="small muted">${esc(tr("{n} of these screenings are sample data.").replace("{n}", T.sample))}</p>` : ""}
+      <div class="dash-top"><section class="card"><h3>Where screening happens</h3>${map}</section>
+        <section class="card stack"><h3>Is the system working?</h3><dl class="facts one"><div><dt>Referrals reviewed</dt><dd>${d.wait.reviewed}</dd></div><div><dt>Median days to specialist review</dt><dd>${d.wait.median_days ?? "–"}</dd></div><div><dt>Reviewed within 7 days</dt><dd>${pct(d.wait.within_7)}</dd></div>
+          <div><dt>Attended eye appointments</dt><dd>${pct(d.attendance.rate)} <span class="small muted" data-notr>(${d.attendance.attended} / ${d.attendance.attended + d.attendance.missed})</span></dd></div><div><dt>Missed appointments</dt><dd>${d.attendance.missed}</dd></div><div><dt>Overdue for yearly check</dt><dd>${d.recall_overdue}</dd></div><div><dt>CHWs trained</dt><dd data-notr>${d.chws_trained} / ${d.chws}</dd></div></dl></section></div>
+      <section class="card"><h3>By area</h3><div class="table-wrap"><table class="legend wide"><thead><tr><th>Area</th><th>Screenings</th><th>People</th><th>Referred by AI</th><th>Urgent</th><th>DR confirmed</th></tr></thead><tbody>${d.areas.map((a) => `<tr><td data-notr>${esc(a.name)}</td><td>${a.screenings}</td><td>${a.people}</td><td>${a.ai_referred}</td><td>${a.urgent}</td><td>${a.dr_confirmed}</td></tr>`).join("")}</tbody></table></div></section>
+      <section class="card"><h3>Hospitals</h3><div class="table-wrap"><table class="legend wide"><thead><tr><th>Hospital</th><th>Waiting for review</th><th>Over 7 days</th></tr></thead><tbody>${d.hospitals.map((h) => `<tr><td data-notr>${esc(h.name)}</td><td>${h.waiting}</td><td class="${h.overdue ? "bad" : ""}">${h.overdue}</td></tr>`).join("") || `<tr><td colspan="3">${esc(t("No hospitals in this county yet."))}</td></tr>`}</tbody></table></div></section>
+      <section class="card"><div class="charts">${pie(t("AI first results"), d.outcomes, PIE.clinic)}${pie(t("Health cover"), d.cover.filter((c) => c.count), PIE.clinic, "People")}${d.treatments.length ? pie(t("Treatments given"), d.treatments, PIE.clinic, "Patients") : ""}</div></section>
+      ${modelCheck(d.model)}`;
+  }
+  function modelCheck(mc) {
+    const m = mc.all, pct = (v) => (v === null || v === undefined ? "–" : Math.round(v * 100) + "%");
+    const G = ["none", "mild", "moderate", "severe", "proliferative"], GN = { none: "No DR", mild: "Mild", moderate: "Moderate", severe: "Severe", proliferative: "Proliferative" }, ON = { rescreen: "No referral", refer: "Refer", urgent: "Urgent" };
+    return `<section class="card stack"><h3>How well the AI agrees with the eye specialists</h3>
+      <div class="tiles trio">${tile(m.n, "Referrals graded by a specialist")}${tile(pct(m.ppv), "AI referrals confirmed")}${tile(m.urgent ? `${m.urgent_confirmed}/${m.urgent}` : "–", "AI urgent, specialist severe")}</div>
+      <div class="table-wrap"><table class="legend wide"><thead><tr><th>${esc(t("AI said"))} \\ ${esc(t("Specialist graded"))}</th>${G.map((g) => `<th>${esc(t(GN[g]))}</th>`).join("")}</tr></thead><tbody>${["urgent", "refer", "rescreen"].map((o) => `<tr><th>${esc(t(ON[o]))}</th>${G.map((g) => `<td>${m.grid[o][g] || ""}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+      <p class="small muted">${esc(t("Only referrals are graded by a specialist, so this shows how often referrals were right. To measure missed cases, a specialist should also grade a random 1 in 10 of the photos the AI didn't refer."))}${mc.sample ? " " + esc(tr("{n} of these are sample data.").replace("{n}", mc.sample)) : ""}</p></section>`;
+  }
+
+
+  // ---- Handlers for follow-ups, recall, training, camera, attendance, treatment, readings and the county dashboard
+  const TREAT_OPTS = [["laser", "Laser treatment"], ["injection", "Eye injection (anti-VEGF)"], ["surgery", "Eye surgery (vitrectomy)"], ["cataract", "Cataract surgery"], ["glasses", "Glasses"], ["monitor", "Watch and check again"], ["other", "Other"]];
+  const VA = ["", "6/6", "6/9", "6/12", "6/18", "6/24", "6/36", "6/60", "3/60", "CF", "HM", "PL", "NPL"];
+  function openTreatForm(pid, name) {
+    closePreview();
+    const box = document.createElement("div"); box.className = "pv-back"; box.id = "pv";
+    box.innerHTML = `<form class="pv stack" id="treatform" data-pid="${pid}" role="dialog" aria-modal="true" aria-labelledby="tr-title"><div class="pv-head"><h2 id="tr-title">Record treatment</h2><button class="icon-btn pv-x" data-pv="close" type="button" aria-label="Close">✕</button></div><p class="muted" data-notr>${esc(name)}</p>
+      <label>Treatment given<select name="treatment" required>${TREAT_OPTS.map(([k, n]) => `<option value="${k}">${n}</option>`).join("")}</select></label>
+      <label>Eye<select name="eye"><option value="right">Right eye</option><option value="left">Left eye</option><option value="both">Both eyes</option></select></label>
+      <div class="two"><label>Vision after, right eye<select name="va_right" data-notr>${VA.map((v) => `<option>${v}</option>`).join("")}</select></label><label>Vision after, left eye<select name="va_left" data-notr>${VA.map((v) => `<option>${v}</option>`).join("")}</select></label></div>
+      <label>Note, optional<textarea name="note" rows="2" maxlength="300"></textarea></label>
+      <div class="row between"><button class="btn" data-pv="close" type="button">Cancel</button><button class="btn primary">Save treatment</button></div></form>`;
+    document.body.appendChild(box); translateTree(box); box.querySelector("select").focus();
+  }
+  document.addEventListener("click", async (ev) => {
+    const b = ev.target.closest("[data-fudone],[data-recall],[data-live],[data-attend],[data-treatfor],[data-cperiod],[data-staffok],[data-act=train-next],[data-act=train-back],[data-act=train-redo],[data-act=cert]"); if (!b) return;
+    const A = b.dataset.act;
+    if (b.dataset.fudone) { try { await api("POST", `/api/chw/followups/${b.dataset.fudone}/done`, {}); toast(t("Marked as followed up.")); } catch (e) { toast(tr(e.message)); } return renderChw(); }
+    if (b.dataset.recall !== undefined) {
+      const r = (S.recall || [])[+b.dataset.recall]; if (!r) return;
+      S.flow = newFlow(); S.flow.form = { name: r.name, phone: "0" + String(r.phone).replace(/^\+?254/, ""), birth_year: r.birth_year || "", area: r.area, email: "", sms_consent: true }; S.tab = "screen"; window.scrollTo(0, 0); return renderChw();
+    }
+    if (b.dataset.live) return liveCamera(b.dataset.live);
+    if (b.dataset.attend) { b.disabled = true; try { await api("POST", `/api/clinic/appointments/${b.dataset.attend}/attendance`, { status: b.dataset.st }); toast(b.dataset.st === "missed" ? t("Marked as missed. The health worker will follow up.") : t("Marked as attended.")); } catch (e) { toast(tr(e.message)); } return renderClinic(); }
+    if (b.dataset.treatfor) return openTreatForm(b.dataset.treatfor, b.dataset.tname || "");
+    if (b.dataset.cperiod) { S.period = b.dataset.cperiod; return renderCounty(); }
+    if (b.dataset.staffok) { b.disabled = true; try { await api("POST", `/api/county/staff/${b.dataset.staffok}/approve`, {}); toast(t("Approved. The clinician was told by SMS.")); } catch (e) { toast(tr(e.message)); } return renderCounty(); }
+    const tr2 = S.train || (S.train = { step: 0, answers: [], result: null });
+    if (A === "train-next") { tr2.step += 1; window.scrollTo(0, 0); return renderChw(); }
+    if (A === "train-back") { tr2.step = Math.max(0, tr2.step - 1); return renderChw(); }
+    if (A === "train-redo") { S.train = { step: 0, answers: [], result: null, redo: true }; return renderChw(); }
+    if (A === "cert") { try { const r = await fetch("/api/chw/certificate", { credentials: "same-origin" }); if (!r.ok) throw new Error(t("Pass the training quiz first.")); const bytes = new Uint8Array(await r.arrayBuffer()); pdfModal({ url: URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })), bytes }, t("Your AfriEye training certificate"), t("Download it or print it from Open the PDF."), ""); } catch (e) { toast(tr(e.message)); } }
+  });
+  document.addEventListener("change", async (ev) => {
+    const el = ev.target;
+    if (el.id === "tipsms") { try { await api("POST", `/api/patients/${S.patient}/tips`, { on: el.checked }); toast(el.checked ? t("You'll get a tip by SMS every week.") : t("Weekly tips are off.")); } catch (e) { toast(tr(e.message)); el.checked = !el.checked; } }
+  });
+  document.addEventListener("submit", async (ev) => {
+    const f = ev.target;
+    if (f.dataset.staffreject) { ev.preventDefault(); try { await api("POST", `/api/county/staff/${f.dataset.staffreject}/reject`, { reason: new FormData(f).get("reason") }); toast(t("Rejected. The person was told by SMS.")); } catch (e) { toast(tr(e.message)); } return renderCounty(); }
+    if (!["quizform", "myvitals", "treatform"].includes(f.id)) return;
+    ev.preventDefault(); const fd = Object.fromEntries(new FormData(f));
+    if (f.id === "quizform") {
+      const answers = [0, 1, 2, 3, 4].map((i) => +fd["q" + i]);
+      try { const r = await api("POST", "/api/chw/training", { answers }); S.train.result = r; if (r.passed) { S.me = await api("GET", "/api/me"); S.train.redo = false; } } catch (e) { toast(tr(e.message)); }
+      window.scrollTo(0, 0); return renderChw();
+    }
+    if (f.id === "myvitals") { try { await api("POST", `/api/patients/${S.patient}/vitals`, fd); toast(t("Reading saved.")); } catch (e) { toast(tr(e.message)); return; } return renderFamily(); }
+    if (f.id === "treatform") { try { await api("POST", `/api/clinic/patients/${f.dataset.pid}/treatments`, fd); closePreview(); toast(t("Treatment saved. The patient was told.")); } catch (e) { toast(tr(e.message)); return; } return renderClinic(); }
+  });
   // ---- Routing
   function renderPending() {
-    frame(`<section class="card narrow"><h2>Your account is waiting for verification</h2><p class="top">Your ${S.me.role === "chw" ? "CHW ID" : "licence"} needs to be checked before you can see patient records. Sign out and try again later.</p></section>`);
+    const u = S.me;
+    if (u.rejected) return frame(`<section class="card narrow stack"><span class="pill urgent">${esc(t("Not approved"))}</span><h2>Your account was not approved</h2><p>${esc(tr("The {c} County health office gave this reason:").replace("{c}", u.county || ""))}</p><p class="note warn" data-notr>${esc(u.rejected)}</p><p class="muted">If this is a mistake, contact the county health office with your licence certificate. They can approve your account later.</p></section>`);
+    const who = u.role === "clinician" ? tr("The {c} County health office checks your licence on the KMPDC or Clinical Officers Council register.").replace("{c}", u.county || "") : u.role === "county" ? t("The AfriEye system administrator checks your staff number with the county.") : t("Your CHW ID needs to be checked.");
+    frame(`<section class="card narrow stack"><span class="pill watch">${esc(t("Waiting for verification"))}</span><h2>Your account is waiting for verification</h2><p>${esc(who)}</p><p class="muted">This stops people pretending to be health workers. You'll get an SMS when it's done. Until then you can't see patient records.</p>${u.hospital ? `<dl class="facts one"><div><dt>Hospital</dt><dd data-notr>${esc(u.hospital)}</dd></div><div><dt>Licence number</dt><dd data-notr>${esc(u.staff_id || "")}</dd></div></dl>` : ""}</section>`);
   }
   async function render() {
     if (!S.me) return renderAuth();
@@ -852,6 +1067,7 @@
     if (S.me.role !== "member" && !S.me.approved) return renderPending();
     if (S.me.role === "chw") return renderChw();
     if (S.me.role === "clinician") return renderClinic();
+    if (S.me.role === "county") return renderCounty();
     return renderFamily();
   }
   async function afterSignIn(me) {

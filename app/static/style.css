@@ -262,3 +262,21 @@ h4{margin:6px 0 0;font:700 1rem var(--display)}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;background:linear-gradient(180deg,#000000 0 30%,#FFFFFF 30% 37%,#BB0000 37% 63%,#FFFFFF 63% 70%,#006600 70%)}
 .pv-back{background:#111111b3}
 .pm-item[aria-current=page]{background:var(--primary)}
+/* County health officer: dark Kenyan green with the same green buttons */
+:root[data-app-theme="county"]{--head:#0F3B26;--head-ink:#FFFFFF;--head-muted:#CFE3D6;--primary:#006B3F;--primary-ink:#FFFFFF;--focus:#BB0000;--ink:#1B1F1C;--muted:#4A524C;--bg:#F3F5F2;--surface:#FFFFFF;--line:#D3DBD4;--tint:#E2F0E7;--soft:#EEF3EF;--urgent:#B00015;--urgent-bg:#FBE3E5;--ok:#006B3F;--ok-bg:#DDF0E4;--refer:#8A5200;--refer-bg:#FCF0D8;--watch:#21456F;--watch-bg:#DFE9F5}
+.table-wrap{overflow-x:auto;max-width:100%}
+.legend.wide{width:100%;border-collapse:collapse}.legend.wide th,.legend.wide td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.county-map{width:100%;height:auto;display:block}.map-bg{fill:var(--soft);stroke:var(--line)}
+.map-a{fill:#006B3F;stroke:#004D2C;stroke-width:1.5}.map-h{fill:#BB0000}.map-t{font-size:11px;fill:var(--ink);font-weight:700}.map-n{font-size:11px;fill:#fff;font-weight:800}
+.line-chart svg{width:100%;max-width:420px;height:auto}.line-chart .ax{font-size:9px;fill:var(--muted)}.line-chart .grid{stroke:var(--line);stroke-width:1}.line-chart .band-ok{fill:#006B3F;fill-opacity:.08}
+.alert-card{border-left:5px solid var(--urgent)}
+.tip{border-left:5px solid #006B3F}
+.cert{text-align:left}
+.cam{background:var(--surface);color:var(--ink);border-radius:14px;padding:14px;width:min(560px,100%);max-height:calc(100vh - 24px);overflow:auto;display:flex;flex-direction:column;gap:10px}
+.cam-view{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:1/1}
+.cam-view video{width:100%;height:100%;object-fit:cover;display:block}
+.cam-ring{position:absolute;inset:12%;border:3px dashed #ffffffcc;border-radius:50%;pointer-events:none}
+.cam-tip{font-weight:800;font-size:1.15rem;padding:8px 12px;border-radius:10px}.cam-tip.ok{background:var(--ok-bg);color:var(--ok)}.cam-tip.warn{background:var(--refer-bg);color:var(--refer)}
+.cam-checks{list-style:none;margin:0;padding:0;display:grid;gap:2px;font-size:.92rem;color:var(--muted)}.cam-checks li.ok{color:var(--ok)}
+.btn.danger{border-color:var(--urgent);color:var(--urgent)}
+.stack>.pill,.narrow>.pill{align-self:flex-start}
