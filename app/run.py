@@ -10,7 +10,7 @@ from werkzeug.security import generate_password_hash
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from places import AREA  # noqa: E402
-from server import SCHEMA, create_app  # noqa: E402
+from server import SCHEMA, create_app, upgrade  # noqa: E402
 
 DEMO_PASSWORDS = {"chw": "demo-chw-2026", "clinician": "demo-eye-2026", "member": "demo-patient-2026"}
 # Fictional people. Each demo hospital gets one fictional clinician.
@@ -33,8 +33,9 @@ def seed(path, sample=False):
     con = sqlite3.connect(path); con.executescript(SCHEMA); now = time.time()
     chw_pw, eye_pw = generate_password_hash("demo-chw-2026"), generate_password_hash("demo-eye-2026")
     con.execute("INSERT OR IGNORE INTO users(phone,name,role,pw,area,staff_id,approved,created) VALUES(?,?,?,?,?,?,1,?)", ("+254711000001", "Amina Wanjiru", "chw", chw_pw, "korogocho", "CHW-NBI-0417", now))
-    for h, (phone, name) in DEMO_DOCTORS.items():
-        con.execute("INSERT OR IGNORE INTO users(phone,name,role,pw,hospital_id,staff_id,approved,created) VALUES(?,?,?,?,?,?,1,?)", (phone, name, "clinician", eye_pw, h, "DEMO-" + h.upper(), now))
+    upgrade(con)
+    for h, (phone, name) in DEMO_DOCTORS.items():  # example.org addresses are reserved for examples, so nothing reaches a real person
+        con.execute("INSERT OR IGNORE INTO users(phone,name,role,pw,hospital_id,staff_id,approved,email,created) VALUES(?,?,?,?,?,?,1,?,?)", (phone, name, "clinician", eye_pw, h, "DEMO-" + h.upper(), f"{h}.eye@example.org", now))
     con.commit()
     if sample and not con.execute("SELECT 1 FROM screenings WHERE is_sample=1").fetchone():
         add_sample_data(con)
@@ -50,8 +51,9 @@ def add_sample_data(con):
     photos = sorted((HERE / "static" / "samples").glob("*.jpg")); pids = []
     for i, (name, by, area) in enumerate(SAMPLE_PATIENTS):
         phone = f"+2547220{i:05d}"
-        uid = con.execute("INSERT INTO users(phone,name,role,pw,approved,created) VALUES(?,?,'member',?,1,?)", (phone, name, generate_password_hash("demo-patient-2026") if i == 0 else None, now.timestamp())).lastrowid
-        pid = con.execute("INSERT INTO patients(name,birth_year,phone,village,area_id,sms_consent,created_by,created) VALUES(?,?,?,?,?,1,?,?)", (name, by, phone, AREA[area]["name"], area, chw, now.timestamp())).lastrowid
+        uid = con.execute("INSERT INTO users(phone,name,role,pw,approved,email,created) VALUES(?,?,'member',?,1,?,?)", (phone, name, generate_password_hash("demo-patient-2026") if i == 0 else None, f"patient{i}@example.org", now.timestamp())).lastrowid
+        hist = json.dumps(dict(items=rng.sample(["High blood pressure", "Kidney disease", "Cataract", "High cholesterol"], rng.randint(0, 2)), diabetes_type="Type 2", years=rng.randint(2, 20), insulin=rng.random() < .3, notes=""))
+        pid = con.execute("INSERT INTO patients(name,birth_year,phone,village,area_id,sms_consent,created_by,created,conditions) VALUES(?,?,?,?,?,1,?,?,?)", (name, by, phone, AREA[area]["name"], area, chw, now.timestamp(), hist)).lastrowid
         con.execute("INSERT INTO links(patient_id,user_id,access,relation,added_by,created) VALUES(?,?,'owner','Self',?,?)", (pid, uid, chw, now.timestamp())); pids.append(pid)
     days = [0, 0, 0] + [min(now.day - 1, d) for d in (1, 2, 3, 4, 5)] + [8, 12, 15, 21, 27, 33, 41, 48, 56, 63, 72, 88, 95, 120, 140, 170, 200, 240]
     days = [d for d in days if (now - timedelta(days=d)).year == now.year]
@@ -77,6 +79,42 @@ def add_sample_data(con):
     con.commit()
 
 
+def backup_or_restore(db, action, source=None):
+    """python app/run.py backup             saves a copy in app/backups
+       python app/run.py restore FILE       replaces the data with that copy (stop the app first)"""
+    import shutil
+    folder = HERE / "backups"; folder.mkdir(exist_ok=True)
+    if action == "backup":
+        target = folder / f"afrieye-{time.strftime('%Y%m%d-%H%M%S')}.db"
+        src = sqlite3.connect(db); dst = sqlite3.connect(target); src.backup(dst); dst.close(); src.close()
+        for old in sorted(folder.glob("afrieye-*.db"))[:-14]:  # keep the latest 14
+            old.unlink()
+        print("Backup saved:", target); return target
+    if not source or not pathlib.Path(source).exists():
+        print("Give the backup file to restore, for example: python app/run.py restore app/backups/afrieye-20261109-120000.db"); return
+    if pathlib.Path(db).exists():
+        shutil.copy(db, folder / f"before-restore-{time.strftime('%Y%m%d-%H%M%S')}.db")
+    src = sqlite3.connect(source); dst = sqlite3.connect(db); src.backup(dst); dst.close(); src.close()
+    print("Restored from", source)
+
+
+def background(app):
+    """Sends deadline alerts and reminders on time, and makes a backup each day."""
+    import threading
+    def loop():
+        last_backup = 0
+        while True:
+            try:
+                with app.app_context():
+                    app.run_due_jobs()
+                if time.time() - last_backup > 86400:
+                    backup_or_restore(app.config["DB"], "backup"); last_backup = time.time()
+            except Exception as e:
+                print("Background job failed:", e, flush=True)
+            time.sleep(300)
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def lan_address():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("10.255.255.255", 1)); ip = s.getsockname()[0]; s.close()
@@ -88,7 +126,9 @@ def lan_address():
 if __name__ == "__main__":
     os.environ.setdefault("AFRIEYE_SECRET", secret())
     production = os.environ.get("AFRIEYE_PRODUCTION") == "1"
-    app = create_app({"AUTO_APPROVE": not production})
+    app = create_app({"AUTO_APPROVE": not production, "USSD_KEY": os.environ.get("AFRIEYE_USSD_KEY") or ("" if production else "demo")})
+    if len(sys.argv) >= 2 and sys.argv[1] in ("backup", "restore"):
+        backup_or_restore(app.config["DB"], sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None); sys.exit()
     if len(sys.argv) == 3 and sys.argv[1] == "approve":  # python app/run.py approve 0712345678
         import re
         seed(app.config["DB"]); phone = re.sub(r"[\s\-()]", "", sys.argv[2]); phone = "+254" + phone[1:] if phone.startswith("0") else phone
@@ -105,5 +145,8 @@ if __name__ == "__main__":
     print("  Eye specialist: 0711 000 002   password demo-eye-2026   (Kenyatta National Hospital)")
     print("  Patient:        0722 000 000   password demo-patient-2026")
     print("\nNew CHW and clinician accounts are approved automatically in this demo." if not production else "\nNew CHW and clinician accounts wait for: python app/run.py approve PHONE")
+    print("Email mode:", app.config["EMAIL"].name, "(set AFRIEYE_SMTP_HOST, AFRIEYE_SMTP_USER and AFRIEYE_SMTP_PASSWORD to send real email)")
     print("SMS mode:", app.config["SMS"].name, "(test mode prints messages here and sends nothing)\n")
+    background(app)
+    print("USSD:", "phone simulator at http://localhost:%d/static/ussd.html" % port if app.config["USSD_KEY"] == "demo" else "set AFRIEYE_USSD_KEY and give Africa's Talking the /api/ussd/KEY address")
     app.run(host="0.0.0.0", port=port)

@@ -19,9 +19,20 @@ class FakeSMS:
         return {"ok": self.ok, "status": "not sent (test mode)" if self.ok else "failed", "provider_id": "x", "error": None}
 
 
+class FakeEmail:
+    name = "test"
+    def __init__(self):
+        self.sent = []
+    def send(self, to, subject, body, attachment=None):
+        self.sent.append((to, subject, body, attachment)); return {"ok": True, "status": "not sent (test mode)", "error": None}
+
+
+MAIL = {}
+
+
 def setup(ok=True):
-    d = tempfile.mkdtemp(); sms = FakeSMS(ok); path = os.path.join(d, "t.db")
-    app = create_app({"SECRET_KEY": "x" * 40, "DB": path, "SMS": sms, "TESTING": True}); seed(path)
+    d = tempfile.mkdtemp(); sms = FakeSMS(ok); path = os.path.join(d, "t.db"); mail = FakeEmail()
+    app = create_app({"SECRET_KEY": "x" * 40, "DB": path, "SMS": sms, "EMAIL": mail, "TESTING": True}); seed(path); MAIL[id(app)] = mail
     return app, sms
 
 
@@ -34,7 +45,7 @@ def sign_in(app, i):
 
 def screening(ref="r1", level="refer", name="Mary Achieng", phone="0722000111", consent=True, family=None):
     return {"client_ref": ref, "screening_consent": True, "model": "Small CNN", "eyes": [{"eye": "right", "level": level, "message": "m", "p_referable": .7, "p_urgent": .2, "p_quality": .8, "retakes": 0, "photo": JPEG}],
-            "hospital": "knh", "clinician": DOC_ID, "patient": {"name": name, "birth_year": 1958, "area": "korogocho", "phone": phone, "sms_consent": consent}, "family": family if family is not None else [{"name": "Jane Achieng", "relation": "Daughter", "phone": "0722000222", "receive_sms": True}]}
+            "hospital": "knh", "clinician": DOC_ID, "history": {"items": ["High blood pressure"], "diabetes_type": "Type 2", "years": 12, "insulin": False}, "patient": {"name": name, "birth_year": 1958, "area": "korogocho", "phone": phone, "sms_consent": consent}, "family": family if family is not None else [{"name": "Jane Achieng", "relation": "Daughter", "phone": "0722000222", "receive_sms": True}]}
 
 
 def booking(**k):
@@ -150,7 +161,7 @@ def test_register_each_role_needs_the_sms_code():
 
 def test_new_staff_cannot_see_patients_until_verified():
     app, _ = setup(); chw, doc = sign_in(app, 0), sign_in(app, 1); chw.post("/api/chw/screenings", json=screening())
-    c, r = register(app, "clinician", "0733100004", hospital="knh", staff_id="KMPDC-1"); ok = c.post("/api/auth/activate", json={"phone": "0733100004", "code": r.json["test_code"], "password": "clinician-pass-1"})
+    c, r = register(app, "clinician", "0733100004", hospital="knh", staff_id="KMPDC-1", email="new.doc@example.org"); ok = c.post("/api/auth/activate", json={"phone": "0733100004", "code": r.json["test_code"], "password": "clinician-pass-1"})
     assert ok.json["approved"] is False; c.environ_base["HTTP_X_CSRF"] = ok.json["csrf"]
     assert c.get("/api/clinic/referrals").status_code == 403 and c.get("/api/screenings/1/photo/right").status_code == 403
 
@@ -197,8 +208,132 @@ def test_patient_books_a_consultation_and_clinic_confirms():
     assert c.post(f"/api/patients/{pid}/location", json={"area": "kibera"}).status_code == 200 and c.get(f"/api/patients/{pid}").json["patient"]["village"] == "Kibera"
 
 
+def test_emails_reach_clinician_patient_and_family():
+    app, _ = setup(); mail = MAIL[id(app)]; chw, doc = sign_in(app, 0), sign_in(app, 1)
+    b = screening(); b["patient"]["email"] = "Mary@Example.org"; b["family"][0]["email"] = "jane@example.org"
+    assert chw.post("/api/chw/screenings", json=b).status_code == 201
+    assert [m[0] for m in mail.sent] == ["knh.eye@example.org"] and "referral" in mail.sent[0][1].lower(); mail.sent.clear()
+    sid = doc.get("/api/clinic/referrals").json["waiting"][0]["id"]; r = doc.post(f"/api/clinic/referrals/{sid}/confirm", json=booking())
+    to = [m[0] for m in mail.sent]; assert to == ["mary@example.org", "jane@example.org", "knh.eye@example.org"], to
+    assert "Kitale eye clinic" in mail.sent[0][2] and "Dr. Otieno Ouma" in mail.sent[0][2] and len(r.json["emails"]) == 3
+    assert doc.get("/api/clinic/emails").json["rows"][0]["to_email"] == "knh.eye@example.org"
+
+
+def test_no_consent_no_patient_email_and_bad_email_refused():
+    app, _ = setup(); mail = MAIL[id(app)]; chw, doc = sign_in(app, 0), sign_in(app, 1)
+    bad = screening("e1"); bad["patient"]["email"] = "not-an-email"; assert chw.post("/api/chw/screenings", json=bad).status_code == 400
+    b = screening("e2", consent=False); b["patient"]["email"] = "mary@example.org"; chw.post("/api/chw/screenings", json=b); mail.sent.clear()
+    sid = doc.get("/api/clinic/referrals").json["waiting"][0]["id"]; doc.post(f"/api/clinic/referrals/{sid}/confirm", json=booking())
+    assert [m[0] for m in mail.sent] == ["knh.eye@example.org"]
+
+
+def test_clinician_registration_needs_email_and_patient_can_set_one():
+    app, _ = setup(); mail = MAIL[id(app)]
+    assert register(app, "clinician", "0733100020", hospital="knh", staff_id="K1")[1].status_code == 400
+    assert register(app, "clinician", "0733100021", hospital="knh", staff_id="K2", email="knh.eye@example.org")[1].status_code == 409
+    c, r = register(app, "patient", "0733100022", area="korogocho", sms_consent=True); a = c.post("/api/auth/activate", json={"phone": "0733100022", "code": r.json["test_code"], "password": "patient-pass-1"}).json
+    c.environ_base["HTTP_X_CSRF"] = a["csrf"]; assert c.post("/api/me/email", json={"email": "me@example.org"}).json["email"] == "me@example.org"
+    pid = a["patients"][0]["id"]; mail.sent.clear(); c.post(f"/api/patients/{pid}/consultations", json={"hospital": "knh", "date": booking()["date"], "reason": "Check"})
+    assert [m[0] for m in mail.sent] == ["knh.eye@example.org"]; mail.sent.clear()
+    doc = sign_in(app, 1); cid = doc.get("/api/clinic/referrals").json["consultations"][0]["id"]; doc.post(f"/api/clinic/consultations/{cid}/confirm", json=booking())
+    assert [m[0] for m in mail.sent] == ["me@example.org"] and c.get(f"/api/patients/{pid}").json["emails"]
+
+
+def test_health_history_is_required_and_reaches_the_clinician_and_patient():
+    app, _ = setup(); chw, doc = sign_in(app, 0), sign_in(app, 1)
+    bad = screening("h1"); del bad["history"]; assert chw.post("/api/chw/screenings", json=bad).status_code == 400
+    chw.post("/api/chw/screenings", json=screening()); s = doc.get("/api/clinic/referrals").json["waiting"][0]
+    assert s["patient"]["conditions"]["items"] == ["High blood pressure"] and s["deadline"]["days_left"] == 7
+
+
+def patient_client(app, sms):
+    code = next(b for t, b in sms.sent if t == "+254722000111" and "code" in b).split("code: ")[1][:6]
+    c = app.test_client(); a = c.post("/api/auth/activate", json={"phone": "0722000111", "code": code, "password": "patient-pass-1"}).json
+    c.environ_base["HTTP_X_CSRF"] = a["csrf"]; return c, a["patients"][0]["id"]
+
+
+def confirmed(app):
+    app_, sms = app; chw, doc = sign_in(app_, 0), sign_in(app_, 1); chw.post("/api/chw/screenings", json=screening())
+    sid = doc.get("/api/clinic/referrals").json["waiting"][0]["id"]; doc.post(f"/api/clinic/referrals/{sid}/confirm", json=booking())
+    return chw, doc, sid
+
+
+def test_day_3_alert_and_day_7_hospital_email():
+    import sqlite3, time as tm
+    app, sms = setup(); mail = MAIL[id(app)]; chw, doc = sign_in(app, 0), sign_in(app, 1); chw.post("/api/chw/screenings", json=screening()); mail.sent.clear(); sms.sent.clear()
+    con = sqlite3.connect(app.config["DB"]); con.execute("UPDATE screenings SET created=?", (tm.time() - 3.2 * 86400,)); con.commit()
+    with app.app_context():
+        assert app.run_due_jobs()["alerts"] == 1 and app.run_due_jobs()["alerts"] == 0
+    assert [m[0] for m in mail.sent] == ["knh.eye@example.org"] and any(t == "+254711000002" for t, _ in sms.sent)
+    assert any("waiting" in n["title"] for n in doc.get("/api/notifications").json["items"])
+    con.execute("UPDATE screenings SET created=?", (tm.time() - 7.1 * 86400,)); con.commit(); mail.sent.clear()
+    with app.app_context():
+        assert app.run_due_jobs()["escalations"] == 1
+    assert mail.sent[0][0] == "knh.eyeclinic@example.org" and "Dr. Otieno Ouma has not taken any action for a period of 7 days" in mail.sent[0][2]
+    assert doc.get("/api/clinic/referrals").json["waiting"][0]["deadline"]["escalated"]
+
+
+def test_reminders_reviews_reports_and_settings():
+    import sqlite3, time as tm
+    app, sms = setup(); mail = MAIL[id(app)]; chw, doc, sid = confirmed((app, sms)); pat, pid = patient_client(app, sms)
+    rec = pat.get(f"/api/patients/{pid}").json; aid = rec["next_appointment"]["id"]
+    assert pat.post(f"/api/appointments/{aid}/reminders", json={"when": "day_before", "channels": ["app", "sms"]}).status_code == 201
+    assert pat.post(f"/api/appointments/{aid}/reminders", json={"when": "day_before", "channels": ["email"]}).status_code == 400  # no email yet
+    con = sqlite3.connect(app.config["DB"]); con.execute("UPDATE reminders SET remind_at=?", (tm.time() - 1,)); con.commit(); sms.sent.clear()
+    with app.app_context():
+        assert app.run_due_jobs()["reminders"] == 1
+    assert "reminder" in sms.sent[0][1] and any(n["title"] == "Appointment reminder" for n in pat.get("/api/notifications").json["items"])
+    people = pat.get(f"/api/patients/{pid}").json["people"]; assert {p["role"] for p in people} == {"chw", "clinician"}
+    assert pat.post(f"/api/patients/{pid}/reviews", json={"target_id": people[0]["id"], "stars": 5, "comment": "Very kind"}).status_code == 200
+    assert pat.post(f"/api/patients/{pid}/reviews", json={"target_id": 9999, "stars": 5}).status_code == 400
+    assert chw.get("/api/chw/summary").json["ratings"]["average"] == 5 or doc.get("/api/clinic/summary").json["ratings"]["average"] == 5
+    r = doc.post(f"/api/patients/{pid}/reports"); assert r.status_code == 201
+    pdf = pat.get(f"/api/reports/{r.json['id']}/pdf"); assert pdf.mimetype == "application/pdf" and pdf.data[:4] == b"%PDF"
+    assert pat.get(f"/api/patients/{pid}").json["reports"]; mail.sent.clear()
+    assert pat.post(f"/api/reports/{r.json['id']}/email", json={"email": "son@example.org"}).status_code == 200 and mail.sent[0][3][0].endswith(".pdf")
+    other = app.test_client(); assert other.get(f"/api/reports/{r.json['id']}/pdf").status_code == 401
+    assert pat.post("/api/me/password", json={"current": "wrong", "new": "newpass-123"}).status_code == 400
+    assert pat.post("/api/me/password", json={"current": "patient-pass-1", "new": "newpass-123"}).status_code == 200
+    assert pat.post("/api/me/lang", json={"lang": "sw"}).status_code == 200 and pat.get("/api/me").json["lang"] == "sw"
+    assert b"Mary Achieng" in pat.get("/api/me/export").data
+    assert chw.post("/api/me/delete", json={"password": "demo-chw-2026"}).status_code == 400
+    assert pat.post("/api/me/delete", json={"password": "newpass-123"}).status_code == 200
+    assert doc.get("/api/clinic/referrals").json["reviewed"] == []
+
+
+def test_ussd_register_book_visit_result_and_reminder():
+    app, sms = setup(); app.config["USSD_KEY"] = "k"; c = app.test_client(); chw, doc, sid = confirmed((app, sms))
+    def dial(text, phone="+254733400001"):
+        return c.post("/api/ussd/k", data={"sessionId": "s", "serviceCode": "*384#", "phoneNumber": phone, "text": text}).get_data(as_text=True)
+    assert c.post("/api/ussd/wrong", data={}).status_code == 403
+    assert dial("").startswith("CON Welcome") and dial("1*Akinyi Otieno*1*1").startswith("END You are registered")
+    assert "Book an eye doctor" in dial("") and "Kenyatta" in dial("1")
+    assert dial("1*1*2").startswith("END Request sent to Kenyatta") and doc.get("/api/clinic/referrals").json["consultations"][0]["name"] == "Akinyi Otieno"
+    assert dial("2*1").startswith("END Request sent") and chw.get("/api/chw/visits").json[0]["name"] == "Akinyi Otieno"
+    vid = chw.get("/api/chw/visits").json[0]["id"]; assert chw.post(f"/api/chw/visits/{vid}/accept").status_code == 200
+    out = dial("3", "+254722000111"); assert out.startswith("END Serious eye changes") or "Eye" in out; assert "Appointment:" in out
+    assert dial("4*1", "+254722000111").startswith("END Done") and dial("5", "+254722000111").startswith("END Language")
+    assert "Panga miadi" in dial("", "+254722000111")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]
     for t in tests:
         t(); print("ok", t.__name__)
     print(len(tests), "passed")
+
+
+def test_chw_report_goes_to_clinician_first():
+    app, sms = setup(); chw, doc, sid = confirmed((app, sms)); pat, pid = patient_client(app, sms)
+    assert chw.get(f"/api/patients/{pid}/reports/preview").data[:4] == b"%PDF"  # the CHW checks it first
+    r = chw.post(f"/api/patients/{pid}/reports"); assert r.status_code == 201 and r.json["to"]
+    rid = r.json["id"]
+    assert not pat.get(f"/api/patients/{pid}").json["reports"]  # the patient doesn't see it yet
+    assert pat.get(f"/api/reports/{rid}/pdf").status_code == 403
+    rows = doc.get("/api/clinic/chw-reports").json["rows"]; assert rows[0]["id"] == rid and rows[0]["waiting"]
+    assert doc.get(f"/api/reports/{rid}/pdf").data[:4] == b"%PDF"
+    assert doc.post(f"/api/reports/{rid}/release").status_code == 200
+    assert doc.post(f"/api/reports/{rid}/release").status_code == 409
+    assert pat.get(f"/api/patients/{pid}").json["reports"][0]["id"] == rid
+    assert pat.get(f"/api/reports/{rid}/pdf").data[:4] == b"%PDF"
+    assert any(n["title"] == "Report sent to the patient" for n in chw.get("/api/notifications").json["items"])

@@ -10,6 +10,15 @@ GRADES = {
     "proliferative": ("urgent", "Serious eye changes seen. Please attend urgently"),
     "ungradable": ("refer", "Photo could not be read. An eye exam is needed"),
 }
+GRADES_SW = {
+    "none": "Hakuna madhara ya kisukari machoni",
+    "mild": "Mabadiliko ya awali machoni. Endelea na uchunguzi",
+    "moderate": "Kuna mabadiliko machoni. Tafadhali hudhuria kliniki ya macho",
+    "severe": "Mabadiliko makubwa machoni. Tafadhali hudhuria haraka",
+    "proliferative": "Mabadiliko makubwa machoni. Tafadhali hudhuria haraka",
+    "ungradable": "Picha haikusomeka. Uchunguzi wa macho unahitajika",
+}
+SW_DAYS = ["Jumatatu", "Jumanne", "Jumatano", "Alhamisi", "Ijumaa", "Jumamosi", "Jumapili"]
 ORDER = ["none", "mild", "ungradable", "moderate", "severe", "proliferative"]
 GSM7 = set("@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ!\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà")
 
@@ -30,11 +39,19 @@ def segments(text):
     return 1 if n <= single else -(-n // multi)
 
 
-def when_text(iso):
-    return datetime.fromisoformat(iso).strftime("%a %d %b, %H:%M")
+def when_text(iso, lang="en"):
+    d = datetime.fromisoformat(iso)
+    if lang == "sw":
+        return f"{SW_DAYS[d.weekday()]} {d.strftime('%d/%m/%Y')}, saa {d.strftime('%H:%M')}"
+    return d.strftime("%a %d %b, %H:%M")
 
 
-def compose(kind, name, when_iso, location, grade, url, clinic_phone, detail="full"):
+def compose(kind, name, when_iso, location, grade, url, clinic_phone, detail="full", lang="en"):
+    if lang == "sw" and kind == "booked":
+        who = initials(name); when = when_text(when_iso, "sw")
+        if detail == "minimal":
+            return f"AfriEye: Matokeo ya macho ya {who} yako tayari. Miadi: {when}, {location}. Ingia: {url} Msaada: {clinic_phone}"
+        return f"AfriEye: Matokeo ya macho ya {who}: {GRADES_SW[grade]}. Miadi: {when}, {location}. {url} Msaada: {clinic_phone}"
     """kind: 'booked' (result included), 'pending' (result not ready) or 'released' (result now ready)."""
     who, when = initials(name), when_text(when_iso)
     if kind == "pending":

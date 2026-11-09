@@ -21,8 +21,10 @@ HOSPITALS = [
     ("sabatia", "Sabatia Eye Hospital", "Vihiga", 0.1280, 34.7950), ("nakuru_crh", "Nakuru County Referral Hospital", "Nakuru", -0.2880, 36.0700),
     ("kerugoya_crh", "Kerugoya County Referral Hospital", "Kirinyaga", -0.4980, 37.2800), ("cgh", "Coast General Hospital", "Mombasa", -4.0600, 39.6700),
 ]
+# Example addresses only (example.org never reaches anyone). Replace with each hospital's real eye clinic email.
+HOSPITAL_EMAIL = {h[0]: f"{h[0]}.eyeclinic@example.org" for h in HOSPITALS}
 AREA = {a[0]: dict(id=a[0], name=a[1], county=a[2], lat=a[3], lng=a[4]) for a in AREAS}
-HOSPITAL = {h[0]: dict(id=h[0], name=h[1], county=h[2], lat=h[3], lng=h[4]) for h in HOSPITALS}
+HOSPITAL = {h[0]: dict(id=h[0], name=h[1], county=h[2], lat=h[3], lng=h[4], email=HOSPITAL_EMAIL[h[0]]) for h in HOSPITALS}
 
 
 def km(a, b):
